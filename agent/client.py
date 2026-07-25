@@ -41,7 +41,7 @@ from tools import TOOL_DEFINITIONS, TOOL_MAP
 # └── tests/
 #     └── test_tools.py
 
-PAGE_TITLE = "INVERTEK DRIVES | OPTIDRIVE TECHNICAL ASSISTANT"
+PAGE_TITLE = "Invertek Drives | Optidrive Technical Assistant"
 
 st.set_page_config(
     page_title=PAGE_TITLE,
@@ -50,56 +50,74 @@ st.set_page_config(
 )
 
 # =============================================================================
-# Invertek Drives brand palette
+# Invertek Drives brand palette — colours sampled from invertekdrives.com
 # =============================================================================
 PALETTE = {
-    "navy": "#0A1E3D",
-    "navy_light": "#0F2A52",
-    "navy_dark": "#061228",
-    "orange": "#E05500",
-    "orange_hover": "#C44900",
-    "white": "#FFFFFF",
-    "off_white": "#F4F5F6",
-    "light_gray": "#EAECEE",
-    "mid_gray": "#9BA4B0",
-    "dark_text": "#1A1D21",
-    "body_text": "#2C3035",
-    "muted": "#64748B",
-    "border": "#D5DAE0",
-    "success": "#1A7A3C",
-    "error": "#C0392B",
+    "purple": "#535483",
+    "purple_300": "#7E7AAB",
+    "purple_200": "#8782B4",
+    "purple_hover": "#45466E",
+    "link_blue": "#285FD1",
+    "green": "#63BF4F",
+    "green_alt": "#85B745",
+    "ink": "#1A1A1A",
+    "ink_muted": "#4B4B4B",
+    "surface": "#FFFFFF",
+    "surface_alt": "#F7F7F7",
+    "surface_tile": "#F2F2F2",
+    "panel_black": "#101010",
+    "footer_black": "#000000",
+    "line": "#E2E2EA",
+    "on_purple": "#FFFFFF",
 }
 
 # =============================================================================
-# Global CSS – Invertek Drives industrial look & feel
+# Global CSS – Invertek Drives look & feel (periwinkle purple, not navy/orange)
 # =============================================================================
 st.markdown(
     f"""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Mulish:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
 
     /* ---- RESET & BASE ---- */
     html, body, .stApp, [data-testid="stAppViewContainer"] {{
-        background: {PALETTE['off_white']};
-        color: {PALETTE['body_text']};
-        font-family: 'Inter', Helvetica, Arial, sans-serif;
-        font-size: 14px;
+        background: {PALETTE['surface']};
+        color: {PALETTE['ink']};
+        font-family: 'Mulish', 'Museo Sans', 'Segoe UI', system-ui, Arial, sans-serif;
+        font-size: 15px;
+        line-height: 1.6;
         -webkit-font-smoothing: antialiased;
     }}
 
-    /* Remove default Streamlit padding */
+    /* Remove default Streamlit padding and chrome */
     .block-container {{
         padding-top: 1rem;
+        max-width: 1280px;
+    }}
+    [data-testid="stHeader"] {{
+        display: none !important;
+    }}
+
+    a {{
+        color: {PALETTE['link_blue']};
+        font-weight: 500;
+        text-decoration: none;
+    }}
+
+    :focus-visible {{
+        outline: 2px solid {PALETTE['purple_200']};
+        outline-offset: 2px;
     }}
 
     /* ---- HEADER / TOP BAR ---- */
     .invertek-header {{
-        background: {PALETTE['navy']};
+        background: linear-gradient(90deg, {PALETTE['purple']}, {PALETTE['purple_300']});
+        color: {PALETTE['on_purple']};
         padding: 16px 28px;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        border-bottom: 3px solid {PALETTE['orange']};
+        border-radius: 2px;
     }}
     .invertek-header .brand {{
         display: flex;
@@ -109,67 +127,65 @@ st.markdown(
     .invertek-header .brand-icon {{
         width: 40px;
         height: 40px;
-        background: {PALETTE['orange']};
+        background: {PALETTE['surface']};
+        color: {PALETTE['purple']};
         display: flex;
         align-items: center;
         justify-content: center;
         font-weight: 800;
-        font-size: 18px;
-        color: #FFF;
-        letter-spacing: -1px;
+        font-size: 20px;
+        border-radius: 2px;
     }}
     .invertek-header .brand-text h1 {{
-        margin: 0;
-        font-size: 15px;
+        margin: 0 !important;
+        padding: 0 !important;
+        font-size: 18px;
         font-weight: 700;
-        letter-spacing: 1.2px;
-        color: #FFFFFF;
-        text-transform: uppercase;
+        color: {PALETTE['on_purple']};
         line-height: 1.2;
     }}
     .invertek-header .brand-text span {{
-        font-size: 10px;
+        font-size: 12px;
         font-weight: 500;
-        letter-spacing: 2px;
-        color: {PALETTE['mid_gray']};
+        color: rgba(255, 255, 255, 0.78);
         display: block;
     }}
     .invertek-header .header-badge {{
-        background: {PALETTE['orange']};
-        color: #FFF;
-        padding: 5px 14px;
-        font-size: 10px;
-        font-weight: 700;
-        letter-spacing: 0.8px;
-        text-transform: uppercase;
+        background: {PALETTE['surface']};
+        color: {PALETTE['purple']};
+        padding: 6px 16px;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 999px;
     }}
 
-    /* ---- BADGE / TRUST MARK ---- */
+    /* ---- BADGE / TRUST MARK (pill chips) ---- */
     .trust-badge {{
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        background: {PALETTE['navy']};
-        color: #FFF;
+        background: {PALETTE['surface']};
+        border: 1px solid {PALETTE['line']};
+        color: {PALETTE['ink']};
         padding: 6px 16px 6px 12px;
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.5px;
-        text-transform: uppercase;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 999px;
     }}
     .trust-badge .dot {{
         width: 8px;
         height: 8px;
-        background: {PALETTE['orange']};
+        border-radius: 50%;
+        background: {PALETTE['green']};
         flex-shrink: 0;
     }}
-    .trust-badge.outline {{
-        background: transparent;
-        border: 1px solid {PALETTE['navy']};
-        color: {PALETTE['navy']};
+    .trust-badge.cta {{
+        background: {PALETTE['purple']};
+        border-color: {PALETTE['purple']};
+        color: {PALETTE['on_purple']};
     }}
-    .trust-badge.outline .dot {{
-        background: {PALETTE['orange']};
+    .trust-badge.cta .dot {{
+        background: {PALETTE['green']};
     }}
 
     /* ---- HIDE SIDEBAR ---- */
@@ -185,146 +201,142 @@ st.markdown(
 
     /* ---- CHAT BUBBLES ---- */
     .msg-user {{
-        background: {PALETTE['white']};
-        border: 1px solid {PALETTE['border']};
+        background: {PALETTE['surface_tile']};
+        border: 1px solid {PALETTE['line']};
+        border-radius: 2px;
         padding: 12px 16px;
         margin-bottom: 10px;
-        color: {PALETTE['dark_text']};
-        font-size: 13px;
-        line-height: 1.5;
+        color: {PALETTE['ink']};
+        font-size: 14px;
+        line-height: 1.6;
     }}
     .msg-user strong {{
-        color: {PALETTE['navy']};
-        font-size: 11px;
-        letter-spacing: 0.8px;
-        text-transform: uppercase;
+        color: {PALETTE['ink_muted']};
+        font-size: 12px;
+        font-weight: 700;
         display: block;
         margin-bottom: 4px;
     }}
     .msg-agent {{
-        background: {PALETTE['white']};
-        border-left: 4px solid {PALETTE['orange']};
+        background: {PALETTE['surface']};
+        border: 1px solid {PALETTE['line']};
+        border-left: 4px solid {PALETTE['purple']};
+        border-radius: 2px;
+        box-shadow: 0 1px 4px rgba(16, 16, 16, 0.10);
         padding: 12px 16px;
         margin-bottom: 10px;
-        color: {PALETTE['dark_text']};
-        font-size: 13px;
-        line-height: 1.5;
+        color: {PALETTE['ink']};
+        font-size: 14px;
+        line-height: 1.6;
     }}
     .msg-agent strong {{
-        color: {PALETTE['orange']};
-        font-size: 11px;
-        letter-spacing: 0.8px;
-        text-transform: uppercase;
+        color: {PALETTE['purple']};
+        font-size: 12px;
+        font-weight: 700;
         display: block;
         margin-bottom: 4px;
     }}
 
-    /* ---- BUTTONS (industrial style) ---- */
+    /* ---- BUTTONS (rectangular, near-square corners) ---- */
     .stButton > button {{
-        background: {PALETTE['orange']};
-        color: #FFFFFF;
+        background: {PALETTE['purple']};
+        color: {PALETTE['on_purple']};
         border: none;
-        padding: 8px 28px;
-        font-size: 13px;
-        font-weight: 700;
-        letter-spacing: 0.8px;
-        text-transform: uppercase;
+        border-radius: 2px;
+        padding: 10px 28px;
+        font-family: 'Mulish', 'Museo Sans', 'Segoe UI', system-ui, Arial, sans-serif;
+        font-size: 14px;
+        font-weight: 600;
         cursor: pointer;
         transition: background 0.2s ease;
     }}
     .stButton > button:hover {{
-        background: {PALETTE['navy']};
-        color: #FFFFFF;
+        background: {PALETTE['purple_hover']};
+        color: {PALETTE['on_purple']};
     }}
     .stButton > button:active {{
-        background: {PALETTE['navy_dark']};
+        background: {PALETTE['purple_hover']};
     }}
 
-    /* ---- SECTION HEADERS ---- */
+    /* ---- SECTION HEADERS (purple emphasis) ---- */
     .section-title {{
-        font-family: 'Inter', Helvetica, Arial, sans-serif;
-        font-size: 14px;
-        font-weight: 800;
-        letter-spacing: 1.5px;
-        text-transform: uppercase;
-        color: {PALETTE['navy']};
+        font-family: 'Mulish', 'Museo Sans', 'Segoe UI', system-ui, Arial, sans-serif;
+        font-size: 18px;
+        font-weight: 700;
+        color: {PALETTE['purple']};
+        line-height: 1.2;
         padding-bottom: 6px;
-        border-bottom: 2px solid {PALETTE['orange']};
+        border-bottom: 2px solid {PALETTE['line']};
         display: inline-block;
         margin-bottom: 12px;
     }}
 
     /* ---- TABLES ---- */
     .stTable thead th {{
-        background: {PALETTE['navy']};
-        color: #FFFFFF;
+        background: {PALETTE['purple']};
+        color: {PALETTE['on_purple']};
         font-weight: 700;
-        font-size: 11px;
-        letter-spacing: 0.8px;
-        text-transform: uppercase;
+        font-size: 13px;
         padding: 8px 12px;
     }}
     .stTable tbody td {{
-        font-size: 13px;
+        font-size: 14px;
         padding: 8px 12px;
     }}
 
     /* ---- SELECT BOX LABELS (inline controls) ---- */
     .stSelectbox label, .stTextInput label {{
-        font-family: 'Inter', Helvetica, Arial, sans-serif;
-        font-size: 10px;
-        font-weight: 700;
-        letter-spacing: 1.2px;
-        text-transform: uppercase;
-        color: {PALETTE['navy']};
+        font-family: 'Mulish', 'Museo Sans', 'Segoe UI', system-ui, Arial, sans-serif;
+        font-size: 13px;
+        font-weight: 600;
+        color: {PALETTE['ink_muted']};
     }}
 
     /* ---- INPUTS ---- */
     .stTextInput > div > div > input {{
-        border: 1px solid {PALETTE['border']};
-        background: {PALETTE['white']};
-        color: {PALETTE['dark_text']};
-        font-size: 13px;
+        border: 1px solid {PALETTE['line']};
+        border-radius: 2px;
+        background: {PALETTE['surface']};
+        color: {PALETTE['ink']};
+        font-size: 14px;
         padding: 8px 12px;
     }}
     .stTextInput > div > div > input:focus {{
-        border-color: {PALETTE['orange']};
-        box-shadow: 0 0 0 1px {PALETTE['orange']};
+        border-color: {PALETTE['purple']};
+        box-shadow: 0 0 0 1px {PALETTE['purple']};
     }}
 
     /* ---- WARNINGS / ALERTS ---- */
     .stAlert {{
-        font-size: 13px;
+        font-size: 14px;
         font-weight: 500;
-        border-radius: 0;
+        border-radius: 2px;
     }}
 
     /* ---- EXPANDER ---- */
     .streamlit-expanderHeader {{
-        font-weight: 700;
-        letter-spacing: 0.5px;
-        text-transform: uppercase;
-        color: {PALETTE['navy']};
-        font-size: 12px;
+        font-weight: 600;
+        color: {PALETTE['ink']};
+        font-size: 13px;
     }}
 
-    /* ---- FOOTER ---- */
+    /* ---- FOOTER (black band) ---- */
     .invertek-footer {{
-        background: {PALETTE['navy_dark']};
-        color: {PALETTE['mid_gray']};
+        background: {PALETTE['footer_black']};
+        color: rgba(255, 255, 255, 0.72);
+        border-radius: 2px;
         padding: 20px 28px;
-        font-size: 11px;
-        letter-spacing: 0.4px;
+        font-size: 12px;
         margin-top: 24px;
     }}
     .invertek-footer strong {{
-        color: #FFFFFF;
+        color: {PALETTE['on_purple']};
         font-weight: 600;
     }}
 
     /* ---- LOADER / SPINNER ---- */
     .stSpinner > div {{
-        border-top-color: {PALETTE['orange']} !important;
+        border-top-color: {PALETTE['purple']} !important;
     }}
     </style>
     """,
@@ -374,10 +386,10 @@ st.markdown(
             <div class="brand-icon">I</div>
             <div class="brand-text">
                 <h1>Invertek Drives</h1>
-                <span>OPTIDRIVE &mdash; VARIABLE FREQUENCY DRIVES</span>
+                <span>Optidrive &mdash; variable frequency drives</span>
             </div>
         </div>
-        <div class="header-badge">E3 DIAGNOSTICS</div>
+        <div class="header-badge">E3 diagnostics</div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -390,13 +402,13 @@ st.markdown(
     f"""
     <div style="padding:12px 28px; display:flex; gap:12px; flex-wrap:wrap;">
         <div class="trust-badge">
-            <span class="dot"></span> GLOBAL SUPPORT NETWORK
+            <span class="dot"></span> Global support network
         </div>
         <div class="trust-badge">
-            <span class="dot"></span> ISO 9001 CERTIFIED
+            <span class="dot"></span> ISO 9001 certified
         </div>
-        <div class="trust-badge outline">
-            <span class="dot"></span> OPTIDRIVE E3
+        <div class="trust-badge cta">
+            <span class="dot"></span> Optidrive E3
         </div>
     </div>
     """,
@@ -422,19 +434,19 @@ api_key = DEEPSEEK_API_KEY
 col1, col2, col3 = st.columns([2, 2, 1])
 with col1:
     selected_model = st.selectbox(
-        "VFD MODEL",
+        "VFD model",
         MODELS,
         label_visibility="visible",
     )
 with col2:
     selected_category = st.selectbox(
-        "CATEGORY",
+        "Category",
         CATEGORIES,
         label_visibility="visible",
     )
 with col3:
     firmware = st.text_input(
-        "FIRMWARE",
+        "Firmware",
         value="",
         placeholder="e.g. v2.10",
         label_visibility="visible",
@@ -546,7 +558,7 @@ if st.button("Submit Query", key="send_button"):
 # =============================================================================
 st.markdown("---")
 st.markdown(
-    '<div class="section-title">CONVERSATION LOG</div>',
+    '<div class="section-title">Conversation log</div>',
     unsafe_allow_html=True,
 )
 
@@ -554,20 +566,20 @@ for message in st.session_state.messages:
     if message["role"] == "user":
         st.markdown(
             f"<div class='msg-user'>"
-            f"<strong>ENGINEER QUERY</strong> {message['content']}"
+            f"<strong>Engineer query</strong> {message['content']}"
             f"</div>",
             unsafe_allow_html=True,
         )
     else:
         st.markdown(
             f"<div class='msg-agent'>"
-            f"<strong>TECHNICAL RESPONSE</strong> {message['content']}"
+            f"<strong>Technical response</strong> {message['content']}"
             f"</div>",
             unsafe_allow_html=True,
         )
         sources = message.get("sources", [])
         if sources:
-            with st.expander("REFERENCE DOCUMENTS"):
+            with st.expander("Reference documents"):
                 for src in sources:
                     st.markdown(
                         f"**{src['id']} &mdash; {src['title']}**  "
@@ -581,7 +593,7 @@ for message in st.session_state.messages:
 st.markdown(
     f"""
     <div class="invertek-footer">
-        <strong>INVERTEK DRIVES</strong> &mdash; A world leader in
+        <strong>Invertek Drives</strong> &mdash; A world leader in
         variable frequency drive technology.
         &nbsp;&middot;&nbsp;
         Optidrive E3 Technical Support Tool
