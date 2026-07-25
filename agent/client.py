@@ -492,7 +492,15 @@ SYSTEM_PROMPT = (
     "upload one instead of calling the tool.\n"
     "10. After the tool runs, summarise exactly what was applied or "
     "rejected according to its JSON report. Never claim a change was "
-    "made if the report does not confirm it."
+    "made if the report does not confirm it.\n"
+    "11. The modified file reaches the engineer ONLY through the "
+    "download button the platform renders under your answer after a "
+    "successful tool call (success: true). Never claim a file was "
+    "generated or sent without that, and never quote server file paths "
+    "in your answer - direct the engineer to the download button.\n"
+    "12. If the report rejects changes (strict mode aborts the whole "
+    "batch on any rejection), explain each rejection and propose a "
+    "corrected change list for approval."
 )
 
 # =============================================================================
@@ -588,13 +596,15 @@ uploaded_ptb = st.file_uploader(
 )
 
 ptb_input_path = None
-ptb_output_path = None
 if uploaded_ptb is not None:
     workdir = Path(st.session_state.ptb_workdir)
     ptb_input_path = str(workdir / uploaded_ptb.name)
     with open(ptb_input_path, "wb") as fh:
         fh.write(uploaded_ptb.getbuffer())
-    ptb_output_path = str(workdir / f"{Path(uploaded_ptb.name).stem}_modified.ptb")
+    st.caption(
+        f"{uploaded_ptb.name} loaded. Approved changes produce a modified "
+        "copy with a download button under the response."
+    )
 
 st.markdown("---")
 
@@ -631,6 +641,19 @@ if st.button("Submit Query", key="send_button"):
         st.session_state.messages.append(
             {"role": "user", "content": user_input}
         )
+
+        # A fresh output name per query, so one modification never
+        # overwrites another and every report's download stays valid.
+        ptb_output_path = None
+        if ptb_input_path:
+            st.session_state.ptb_seq = st.session_state.get("ptb_seq", 0) + 1
+            ptb_output_path = str(
+                Path(st.session_state.ptb_workdir)
+                / (
+                    f"{Path(ptb_input_path).stem}_modified_"
+                    f"v{st.session_state.ptb_seq}.ptb"
+                )
+            )
 
         context_lines = [
             f"Drive model: {selected_model}",
@@ -732,12 +755,23 @@ if st.button("Submit Query", key="send_button"):
                         response.choices[0].message.content or ""
                     ).strip()
 
+            # Keep the modified file's bytes with the message so the
+            # download button outlives the temp file and later overwrites.
+            ptb_bytes = None
+            if ptb_report and ptb_report.get("success"):
+                out = ptb_report.get("output_path")
+                try:
+                    ptb_bytes = Path(out).read_bytes() if out else None
+                except OSError:
+                    ptb_bytes = None
+
             st.session_state.messages.append(
                 {
                     "role": "assistant",
                     "content": assistant_text,
                     "sources": tool_sources,
                     "ptb_report": ptb_report,
+                    "ptb_bytes": ptb_bytes,
                 }
             )
 
@@ -747,7 +781,7 @@ if st.button("Submit Query", key="send_button"):
 # =============================================================================
 # Conversation history
 # =============================================================================
-def render_ptb_report(report: dict, key: str) -> None:
+def render_ptb_report(report: dict, key: str, file_bytes=None) -> None:
     """Render a modify_ptb_configuration JSON report as a branded card."""
     ok = bool(report.get("success"))
     status = (
@@ -797,11 +831,14 @@ def render_ptb_report(report: dict, key: str) -> None:
     st.markdown("".join(parts), unsafe_allow_html=True)
 
     out_path = report.get("output_path")
-    if ok and out_path and Path(out_path).exists():
+    data = file_bytes
+    if data is None and out_path and Path(out_path).exists():
+        data = Path(out_path).read_bytes()
+    if ok and data:
         st.download_button(
             "Download modified .ptb",
-            data=Path(out_path).read_bytes(),
-            file_name=Path(out_path).name,
+            data=data,
+            file_name=Path(out_path).name if out_path else "modified.ptb",
             mime="application/octet-stream",
             key=f"ptb_download_{key}",
         )
@@ -830,7 +867,9 @@ for idx, message in enumerate(st.session_state.messages):
         )
         report = message.get("ptb_report")
         if report:
-            render_ptb_report(report, key=str(idx))
+            render_ptb_report(
+                report, key=str(idx), file_bytes=message.get("ptb_bytes")
+            )
         sources = message.get("sources", [])
         if sources:
             with st.expander("Reference documents"):
