@@ -575,12 +575,12 @@ MODIFY_PTB_TOOL_DEF = {
         "name": "modify_ptb_configuration",
         "description": (
             "Modify specific parameters of an Invertek Optidrive .ptb "
-            "configuration file. Use this ONLY after the human operator has "
-            "approved the proposed parameter changes. The tool applies the "
-            "changes to the existing .ptb, validating ranges and types, and "
-            "writes a new .ptb file to disk. It never modifies read-only "
-            "parameters (group P00) or the fault log. Returns a JSON report "
-            "of applied and rejected changes."
+            "configuration file. The tool applies the changes to the "
+            "existing .ptb, validating ranges and types, and writes a new "
+            ".ptb file to disk; the human operator reviews the resulting "
+            "change report and decides whether to use the file. It never "
+            "modifies read-only parameters (group P00) or the fault log. "
+            "Returns a JSON report of applied and rejected changes."
         ),
         "parameters": {
             "type": "object",

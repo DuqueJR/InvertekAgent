@@ -478,15 +478,19 @@ SYSTEM_PROMPT = (
     "5. Never invent fault codes, parameter values, or wiring "
     "instructions.\n"
     "6. Use professional, engineering-oriented language. "
-    "No emojis, no casual tone.\n\n"
+    "No emojis, no casual tone.\n"
+    "6b. Search with discipline: at most TWO searches per question, "
+    "then act on the best information found. Never repeat a similar "
+    "query hoping for better results.\n\n"
     "PARAMETER FILE CHANGES (.ptb):\n"
     "7. You also have a tool called `modify_ptb_configuration` that "
     "applies parameter changes to the engineer's uploaded .ptb drive "
     "configuration file.\n"
-    "8. NEVER call it before the engineer has explicitly approved a "
-    "specific change list in this conversation. First propose the "
-    "changes (parameter code, current value if known, new value, "
-    "reason) and ask for approval.\n"
+    "8. When the engineer has uploaded a .ptb and your diagnosis "
+    "identifies parameter changes, call the tool DIRECTLY in the same "
+    "turn with the recommended changes - do not ask for approval "
+    "first. The engineer reviews the change report and decides whether "
+    "to download the modified file; that is the approval step.\n"
     "9. Only call it with the exact file paths given in the SESSION "
     "CONTEXT. If no .ptb file has been uploaded, tell the engineer to "
     "upload one instead of calling the tool.\n"
@@ -499,8 +503,9 @@ SYSTEM_PROMPT = (
     "generated or sent without that, and never quote server file paths "
     "in your answer - direct the engineer to the download button.\n"
     "12. If the report rejects changes (strict mode aborts the whole "
-    "batch on any rejection), explain each rejection and propose a "
-    "corrected change list for approval."
+    "batch on any rejection), retry the tool in the same turn with "
+    "only the changes that passed validation, and explain the "
+    "rejected ones in your answer."
 )
 
 # =============================================================================
@@ -602,8 +607,9 @@ if uploaded_ptb is not None:
     with open(ptb_input_path, "wb") as fh:
         fh.write(uploaded_ptb.getbuffer())
     st.caption(
-        f"{uploaded_ptb.name} loaded. Approved changes produce a modified "
-        "copy with a download button under the response."
+        f"{uploaded_ptb.name} loaded. Recommended changes are applied to a "
+        "modified copy - review the change report and download it under "
+        "the response."
     )
 
 st.markdown("---")
@@ -700,7 +706,7 @@ if st.button("Submit Query", key="send_button"):
                     response = client.chat.completions.create(
                         model="deepseek-v4-pro",
                         messages=api_messages,
-                        max_tokens=1000,
+                        max_tokens=3000,
                         temperature=0.2,
                         tools=TOOL_DEFINITIONS,
                     )
@@ -708,7 +714,12 @@ if st.button("Submit Query", key="send_button"):
                     tool_calls = assistant_msg.tool_calls
 
                     if not tool_calls:
-                        assistant_text = (assistant_msg.content or "").strip()
+                        # An empty answer here means the token budget died
+                        # mid-reasoning (finish_reason "length"); fall
+                        # through to the forced final call instead.
+                        assistant_text = (
+                            (assistant_msg.content or "").strip() or None
+                        )
                         break
 
                     api_messages.append(assistant_msg)
@@ -748,12 +759,17 @@ if st.button("Submit Query", key="send_button"):
                     response = client.chat.completions.create(
                         model="deepseek-v4-pro",
                         messages=api_messages,
-                        max_tokens=1000,
+                        max_tokens=3000,
                         temperature=0.2,
                     )
                     assistant_text = (
                         response.choices[0].message.content or ""
                     ).strip()
+
+            if not assistant_text:
+                assistant_text = (
+                    "No response was generated. Please resubmit the query."
+                )
 
             # Keep the modified file's bytes with the message so the
             # download button outlives the temp file and later overwrites.

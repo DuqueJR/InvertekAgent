@@ -155,15 +155,23 @@ def search_invertek_docs(query: str, category: str = "") -> str:
 
         frontmatter, body = _parse_frontmatter(raw)
 
-        if category:
-            topic = frontmatter.get("topic", "").lower()
-            keywords_str = frontmatter.get("keywords", "").lower()
-            cat_lower = category.lower()
-            if cat_lower not in topic and cat_lower not in keywords_str:
-                continue
-
         fm_text = " ".join(f"{k} {v}" for k, v in frontmatter.items())
         score = _score_text(fm_text, terms) * 0.4 + _score_text(body, terms) * 0.6
+
+        # Category is a soft boost, never a hard filter: the UI labels
+        # ("Fault Codes & Diagnostics") don't literally appear in the
+        # frontmatter slugs ("fault-codes"), so exact matching used to
+        # discard every markdown document whenever a category was set.
+        if category and score > 0:
+            cat_terms = [t.strip("&,").lower() for t in category.split()]
+            cat_terms = [t for t in cat_terms if len(t) > 2]
+            haystack = " ".join((
+                frontmatter.get("topic", ""),
+                frontmatter.get("keywords", ""),
+                frontmatter.get("title", ""),
+            )).lower()
+            if any(t in haystack for t in cat_terms):
+                score = min(score * 1.25, 0.99)
 
         if score > 0:
             title = frontmatter.get("title", filepath.stem)
@@ -232,7 +240,10 @@ SEARCH_TOOL_DEF = {
                         "Control Wiring Diagrams",
                         "General",
                     ],
-                    "description": "Optional. Filter by document category.",
+                    "description": (
+                        "Optional. Boosts documents matching the category; "
+                        "never excludes results."
+                    ),
                 },
             },
             "required": ["query"],
