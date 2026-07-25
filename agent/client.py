@@ -1,4 +1,6 @@
 import json
+import tempfile
+from pathlib import Path
 
 import streamlit as st
 from openai import OpenAI
@@ -69,6 +71,7 @@ PALETTE = {
     "footer_black": "#000000",
     "line": "#E2E2EA",
     "on_purple": "#FFFFFF",
+    "error": "#B42318",
 }
 
 # =============================================================================
@@ -338,6 +341,104 @@ st.markdown(
     .stSpinner > div {{
         border-top-color: {PALETTE['purple']} !important;
     }}
+
+    /* ---- FILE UPLOADER ---- */
+    [data-testid="stFileUploaderDropzone"] {{
+        background: {PALETTE['surface_alt']};
+        border: 1px dashed {PALETTE['purple_200']};
+        border-radius: 2px;
+    }}
+    [data-testid="stFileUploader"] label {{
+        font-family: 'Mulish', 'Museo Sans', 'Segoe UI', system-ui, Arial, sans-serif;
+        font-size: 13px;
+        font-weight: 600;
+        color: {PALETTE['ink_muted']};
+    }}
+    [data-testid="stFileUploaderDropzone"] button {{
+        background: {PALETTE['surface']};
+        color: {PALETTE['purple']};
+        border: 1px solid {PALETTE['line']};
+        border-radius: 999px;
+        font-weight: 600;
+    }}
+
+    /* ---- DOWNLOAD BUTTON (matches primary button) ---- */
+    .stDownloadButton > button {{
+        background: {PALETTE['purple']};
+        color: {PALETTE['on_purple']};
+        border: none;
+        border-radius: 2px;
+        padding: 10px 28px;
+        font-family: 'Mulish', 'Museo Sans', 'Segoe UI', system-ui, Arial, sans-serif;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s ease;
+    }}
+    .stDownloadButton > button:hover {{
+        background: {PALETTE['purple_hover']};
+        color: {PALETTE['on_purple']};
+    }}
+
+    /* ---- PTB CHANGE REPORT ---- */
+    .ptb-report {{
+        background: {PALETTE['surface']};
+        border: 1px solid {PALETTE['line']};
+        border-radius: 2px;
+        box-shadow: 0 1px 4px rgba(16, 16, 16, 0.10);
+        padding: 12px 16px;
+        margin-bottom: 10px;
+        font-size: 14px;
+    }}
+    .ptb-report .ptb-status {{
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 700;
+        padding: 4px 14px;
+        border-radius: 999px;
+        margin-bottom: 8px;
+    }}
+    .ptb-report .ptb-status.ok {{
+        background: rgba(99, 191, 79, 0.12);
+        color: {PALETTE['green']};
+    }}
+    .ptb-report .ptb-status.fail {{
+        background: rgba(180, 35, 24, 0.08);
+        color: {PALETTE['error']};
+    }}
+    .ptb-report table {{
+        width: 100%;
+        border-collapse: collapse;
+        margin: 8px 0;
+        font-size: 13px;
+    }}
+    .ptb-report th {{
+        background: {PALETTE['purple']};
+        color: {PALETTE['on_purple']};
+        font-weight: 700;
+        text-align: left;
+        padding: 6px 10px;
+    }}
+    .ptb-report td {{
+        border-bottom: 1px solid {PALETTE['line']};
+        padding: 6px 10px;
+        color: {PALETTE['ink']};
+    }}
+    .ptb-report .ptb-rejected-item {{
+        border-left: 3px solid {PALETTE['error']};
+        background: {PALETTE['surface_alt']};
+        border-radius: 2px;
+        padding: 8px 12px;
+        margin: 6px 0;
+        font-size: 13px;
+    }}
+    .ptb-report .ptb-warning {{
+        color: {PALETTE['ink_muted']};
+        font-size: 12px;
+        margin-top: 6px;
+    }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -357,6 +458,10 @@ CATEGORIES = [
     "General",
 ]
 
+# Maximum model/tool round-trips per query before a plain-text
+# answer is forced.
+MAX_TOOL_ROUNDS = 6
+
 SYSTEM_PROMPT = (
     "You are an expert technical support assistant for Invertek Drives "
     "Optidrive E3 variable frequency drives. You provide precise, "
@@ -373,7 +478,21 @@ SYSTEM_PROMPT = (
     "5. Never invent fault codes, parameter values, or wiring "
     "instructions.\n"
     "6. Use professional, engineering-oriented language. "
-    "No emojis, no casual tone."
+    "No emojis, no casual tone.\n\n"
+    "PARAMETER FILE CHANGES (.ptb):\n"
+    "7. You also have a tool called `modify_ptb_configuration` that "
+    "applies parameter changes to the engineer's uploaded .ptb drive "
+    "configuration file.\n"
+    "8. NEVER call it before the engineer has explicitly approved a "
+    "specific change list in this conversation. First propose the "
+    "changes (parameter code, current value if known, new value, "
+    "reason) and ask for approval.\n"
+    "9. Only call it with the exact file paths given in the SESSION "
+    "CONTEXT. If no .ptb file has been uploaded, tell the engineer to "
+    "upload one instead of calling the tool.\n"
+    "10. After the tool runs, summarise exactly what was applied or "
+    "rejected according to its JSON report. Never claim a change was "
+    "made if the report does not confirm it."
 )
 
 # =============================================================================
@@ -417,7 +536,8 @@ st.markdown(
 
 st.write(
     "Consult fault codes, parameter settings and wiring diagrams for "
-    "Invertek Optidrive E3 variable frequency drives."
+    "Invertek Optidrive E3 variable frequency drives. Upload a .ptb "
+    "configuration file to propose and apply approved parameter changes."
 )
 
 # =============================================================================
@@ -451,6 +571,30 @@ with col3:
         placeholder="e.g. v2.10",
         label_visibility="visible",
     )
+
+# =============================================================================
+# Drive configuration file (.ptb) upload
+# =============================================================================
+if "ptb_workdir" not in st.session_state:
+    st.session_state.ptb_workdir = tempfile.mkdtemp(prefix="invertek_ptb_")
+
+uploaded_ptb = st.file_uploader(
+    "Drive configuration file (.ptb) — optional",
+    type=["ptb"],
+    help=(
+        "Upload the drive's parameter file to let the assistant propose "
+        "and, once you approve, apply parameter changes."
+    ),
+)
+
+ptb_input_path = None
+ptb_output_path = None
+if uploaded_ptb is not None:
+    workdir = Path(st.session_state.ptb_workdir)
+    ptb_input_path = str(workdir / uploaded_ptb.name)
+    with open(ptb_input_path, "wb") as fh:
+        fh.write(uploaded_ptb.getbuffer())
+    ptb_output_path = str(workdir / f"{Path(uploaded_ptb.name).stem}_modified.ptb")
 
 st.markdown("---")
 
@@ -488,65 +632,112 @@ if st.button("Submit Query", key="send_button"):
             {"role": "user", "content": user_input}
         )
 
-        api_messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+        context_lines = [
+            f"Drive model: {selected_model}",
+            f"Question category: {selected_category}",
         ]
-        api_messages.extend(st.session_state.messages)
+        if firmware.strip():
+            context_lines.append(f"Firmware: {firmware.strip()}")
+        if ptb_input_path:
+            context_lines.append(
+                "Uploaded .ptb configuration file (ptb_input_path): "
+                f"{ptb_input_path}"
+            )
+            context_lines.append(
+                f"Write any modified .ptb to (output_path): {ptb_output_path}"
+            )
+        else:
+            context_lines.append("No .ptb configuration file has been uploaded.")
+
+        api_messages = [
+            {
+                "role": "system",
+                "content": (
+                    SYSTEM_PROMPT
+                    + "\n\nSESSION CONTEXT:\n"
+                    + "\n".join(context_lines)
+                ),
+            },
+        ]
+        api_messages.extend(
+            {"role": m["role"], "content": m["content"]}
+            for m in st.session_state.messages
+        )
 
         try:
+            tool_sources = []
+            ptb_report = None
+            assistant_text = None
+
+            # Iterative tool loop: the model may search, read the results,
+            # search again and finally modify the .ptb — each round passes
+            # the tools again until the model answers in plain text.
             with st.spinner("Analysing query..."):
-                # --- First call: LLM may request a tool call ---
-                response = client.chat.completions.create(
-                    model="deepseek-v4-pro",
-                    messages=api_messages,
-                    max_tokens=500,
-                    temperature=0.2,
-                    tools=TOOL_DEFINITIONS,
-                )
-
-            assistant_msg = response.choices[0].message
-            tool_calls = assistant_msg.tool_calls
-
-            if tool_calls:
-                # Execute tool calls and append results
-                api_messages.append(assistant_msg)
-
-                tool_sources = []
-                for tc in tool_calls:
-                    func_name = tc.function.name
-                    func_args = json.loads(tc.function.arguments)
-                    func = TOOL_MAP[func_name]
-                    result = func(**func_args)
-
-                    api_messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": result,
-                    })
-
-                    # Parse sources for display
-                    parsed = json.loads(result)
-                    tool_sources = parsed.get("documents", [])
-
-                # --- Second call: LLM formulates final answer from tool results ---
-                with st.spinner("Generating response..."):
+                for _ in range(MAX_TOOL_ROUNDS):
                     response = client.chat.completions.create(
                         model="deepseek-v4-pro",
                         messages=api_messages,
-                        max_tokens=500,
+                        max_tokens=1000,
+                        temperature=0.2,
+                        tools=TOOL_DEFINITIONS,
+                    )
+                    assistant_msg = response.choices[0].message
+                    tool_calls = assistant_msg.tool_calls
+
+                    if not tool_calls:
+                        assistant_text = (assistant_msg.content or "").strip()
+                        break
+
+                    api_messages.append(assistant_msg)
+                    for tc in tool_calls:
+                        func_name = tc.function.name
+                        func_args = json.loads(tc.function.arguments)
+
+                        # The modify tool only ever reads/writes the files of
+                        # this session, regardless of what paths the model sent.
+                        if func_name == "modify_ptb_configuration":
+                            func_args["ptb_input_path"] = ptb_input_path or ""
+                            func_args["output_path"] = ptb_output_path or ""
+
+                        func = TOOL_MAP.get(func_name)
+                        if func is None:
+                            result = json.dumps(
+                                {"error": f"Unknown tool: {func_name}"}
+                            )
+                        else:
+                            result = func(**func_args)
+
+                        api_messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": result,
+                        })
+
+                        # Parse results for display
+                        parsed = json.loads(result)
+                        if func_name == "search_invertek_docs":
+                            tool_sources.extend(parsed.get("documents", []))
+                        elif func_name == "modify_ptb_configuration":
+                            ptb_report = parsed
+
+                if assistant_text is None:
+                    # Tool budget exhausted: force a final plain-text answer.
+                    response = client.chat.completions.create(
+                        model="deepseek-v4-pro",
+                        messages=api_messages,
+                        max_tokens=1000,
                         temperature=0.2,
                     )
-
-                assistant_text = response.choices[0].message.content.strip()
-            else:
-                assistant_text = assistant_msg.content.strip()
-                tool_sources = []
+                    assistant_text = (
+                        response.choices[0].message.content or ""
+                    ).strip()
 
             st.session_state.messages.append(
                 {
                     "role": "assistant",
                     "content": assistant_text,
                     "sources": tool_sources,
+                    "ptb_report": ptb_report,
                 }
             )
 
@@ -556,13 +747,73 @@ if st.button("Submit Query", key="send_button"):
 # =============================================================================
 # Conversation history
 # =============================================================================
+def render_ptb_report(report: dict, key: str) -> None:
+    """Render a modify_ptb_configuration JSON report as a branded card."""
+    ok = bool(report.get("success"))
+    status = (
+        '<span class="ptb-status ok">Configuration file updated</span>'
+        if ok
+        else '<span class="ptb-status fail">No configuration file written</span>'
+    )
+    drive_bits = " &middot; ".join(
+        str(report[k])
+        for k in ("drive_type", "drive_version")
+        if report.get(k)
+    )
+    parts = [f'<div class="ptb-report">{status}']
+    if drive_bits:
+        parts.append(
+            f'<span class="ptb-warning">Drive: {drive_bits}</span>'
+        )
+
+    applied = report.get("applied", [])
+    if applied:
+        rows = "".join(
+            f"<tr><td>{ch.get('code', '')}</td>"
+            f"<td>{ch.get('name', '')}</td>"
+            f"<td>{ch.get('old_display', '')} &rarr; "
+            f"<strong>{ch.get('new_display', '')}</strong>"
+            f" {ch.get('units') or ''}</td>"
+            f"<td>{ch.get('reason', '')}</td></tr>"
+            for ch in applied
+        )
+        parts.append(
+            "<table><thead><tr><th>Code</th><th>Parameter</th>"
+            "<th>Change</th><th>Reason</th></tr></thead>"
+            f"<tbody>{rows}</tbody></table>"
+        )
+
+    for rej in report.get("rejected", []):
+        code = rej.get("code") or "—"
+        parts.append(
+            f'<div class="ptb-rejected-item"><strong>{code}</strong> '
+            f"{rej.get('message', '')}</div>"
+        )
+
+    for warning in report.get("warnings", []):
+        parts.append(f'<div class="ptb-warning">{warning}</div>')
+
+    parts.append("</div>")
+    st.markdown("".join(parts), unsafe_allow_html=True)
+
+    out_path = report.get("output_path")
+    if ok and out_path and Path(out_path).exists():
+        st.download_button(
+            "Download modified .ptb",
+            data=Path(out_path).read_bytes(),
+            file_name=Path(out_path).name,
+            mime="application/octet-stream",
+            key=f"ptb_download_{key}",
+        )
+
+
 st.markdown("---")
 st.markdown(
     '<div class="section-title">Conversation log</div>',
     unsafe_allow_html=True,
 )
 
-for message in st.session_state.messages:
+for idx, message in enumerate(st.session_state.messages):
     if message["role"] == "user":
         st.markdown(
             f"<div class='msg-user'>"
@@ -577,6 +828,9 @@ for message in st.session_state.messages:
             f"</div>",
             unsafe_allow_html=True,
         )
+        report = message.get("ptb_report")
+        if report:
+            render_ptb_report(report, key=str(idx))
         sources = message.get("sources", [])
         if sources:
             with st.expander("Reference documents"):
