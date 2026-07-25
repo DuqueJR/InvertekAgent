@@ -550,7 +550,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-for message in st.session_state.messages[1:]:
+for message in st.session_state.messages:
     if message["role"] == "user":
         st.markdown(
             f"<div class='msg-user'>"
@@ -591,4 +591,3 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-x
