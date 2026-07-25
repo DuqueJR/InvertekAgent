@@ -3,3 +3,15 @@
 
 # Virtual environments
 venv/
+.venv/
+
+# Python artefacts
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store
+
+# Claude Code agent tooling (local only)
+CLAUDE.md
+.claude/
