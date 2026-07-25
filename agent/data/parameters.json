@@ -1,0 +1,496 @@
+{
+  "drive_model": "Optidrive E3",
+  "_schema_notes": {
+    "primary_source": "Optidrive ODE-3 (E3) IP20 User Guide, Revision 1.05, document code 82-E3I20-IN, for firmware 3.11. Section 10.1 Fault Code Messages, page 39.",
+    "code_transcription": "The 'code' field is a transcription of the 7-segment display mnemonic printed in the source's Fault Code column. These are rendered in a 7-segment style font in the PDF and were transcribed visually from page images. Some 7-segment characters are inherently ambiguous (S vs 5); entries affected are marked source_unclear.",
+    "sentence_mapping": "Source table has three content columns: Fault Code, No., Description, Suggested Remedy. 'name' = Description column verbatim. Sentences from the Suggested Remedy column were placed verbatim and in source order into: 'description' (declarative/explanatory sentences), 'possible_causes' (explicitly causal statements), 'diagnostic_steps' (imperative check/action sentences), 'reset_notes' (NOTE sentences about resetting). No sentence was reworded, merged, or split mid-sentence.",
+    "category_field": "The source does not categorise fault codes. 'category' values are curator-assigned groupings added for retrieval only — they are NOT from the source.",
+    "variant_note_field": "'variant_note' is an extension field (not in the requested schema) used to label variant-specific applicability (e.g. IP66) and cross-document differences, as required by the curation brief. null = no variant information given by the sources."
+  },
+  "faults": [
+    {
+      "code": "no-FLt",
+      "display_number": "00",
+      "name": "No Fault",
+      "category": "status",
+      "description": "",
+      "possible_causes": [],
+      "diagnostic_steps": ["Not required."],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": null,
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "OI-b",
+      "display_number": "01",
+      "name": "Brake channel over current",
+      "category": "braking",
+      "description": "",
+      "possible_causes": [],
+      "diagnostic_steps": ["Check external brake resistor condition and connection wiring."],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": null,
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "OL-br",
+      "display_number": "02",
+      "name": "Brake resistor overload",
+      "category": "braking",
+      "description": "The drive has tripped to prevent damage to the brake resistor.",
+      "possible_causes": [],
+      "diagnostic_steps": [],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": null,
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "O-I",
+      "display_number": "03",
+      "name": "Output Over Current",
+      "category": "overcurrent",
+      "description": "Instantaneous Over current on the drive output.",
+      "possible_causes": ["Excess load or shock load on the motor."],
+      "diagnostic_steps": [],
+      "reset_notes": "NOTE Following a trip, the drive cannot be immediately reset. A delay time is inbuilt, which allows the power components of the drive time to recover to avoid damage. | Table footer NOTE: Following an over current or overload trip (3, 4, 15), the drive may not be reset until the reset time delay has elapsed to prevent damage to the drive.",
+      "related_parameters": [],
+      "variant_note": null,
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "I_t-trP",
+      "display_number": "04",
+      "name": "Motor Thermal Overload (I2t)",
+      "category": "motor protection",
+      "description": "The drive has tripped after delivering >100% of value in P-08 for a period of time to prevent damage to the motor.",
+      "possible_causes": [],
+      "diagnostic_steps": [],
+      "reset_notes": "Table footer NOTE: Following an over current or overload trip (3, 4, 15), the drive may not be reset until the reset time delay has elapsed to prevent damage to the drive.",
+      "related_parameters": ["P-08"],
+      "variant_note": "Section 7.8 (Fire Mode, page 31) of the same guide prints this code as 'I_t-trP (Accumulated overload Trip)'.",
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "PS-trP",
+      "display_number": "05",
+      "name": "Power stage trip",
+      "category": "power stage",
+      "description": "",
+      "possible_causes": [],
+      "diagnostic_steps": ["Check for short circuits on the motor and connection cable"],
+      "reset_notes": "IP66 Indoor guide table footer NOTE: Following an over current or overload trip (3, 4, 5, 15), the drive may not be reset until the reset time delay has elapsed to prevent damage to the drive.",
+      "related_parameters": [],
+      "variant_note": "Listed only in the E3 IP66 Indoor User Guide V2.00 fault table. Not present in the IP20 User Guide V1.05 fault table (which skips No. 05). The IP66 Outdoor User Guide V1.26 also omits the 05 row but includes '5' in its table footer reset NOTE.",
+      "source": { "document": "Optidrive E3 IP66 Indoor User Guide V2.00 (82-E3MAN-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "O-Volt",
+      "display_number": "06",
+      "name": "Over voltage on DC bus",
+      "category": "supply / DC bus voltage",
+      "description": "",
+      "possible_causes": [],
+      "diagnostic_steps": [
+        "Check the supply voltage is within the allowed tolerance for the drive.",
+        "If the fault occurs on deceleration or stopping, increase the deceleration time in P-04 or install a suitable brake resistor and activate the dynamic braking function with P-34."
+      ],
+      "reset_notes": "",
+      "related_parameters": ["P-04", "P-34"],
+      "variant_note": null,
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "U-Volt",
+      "display_number": "07",
+      "name": "Under voltage on DC bus",
+      "category": "supply / DC bus voltage",
+      "description": "This trip occurs routinely when power is removed from the drive.",
+      "possible_causes": ["The incoming supply voltage is too low."],
+      "diagnostic_steps": [
+        "If it occurs during running, check the incoming power supply voltage and all components in the power feed line to the drive."
+      ],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": null,
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "O-t",
+      "display_number": "08",
+      "name": "Heatsink over temperature",
+      "category": "temperature",
+      "description": "The drive is too hot.",
+      "possible_causes": [],
+      "diagnostic_steps": [
+        "Check the ambient temperature around the drive is within the drive specification.",
+        "Ensure sufficient cooling air is free to circulate around the drive."
+      ],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": null,
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "U-t",
+      "display_number": "09",
+      "name": "Under temperature",
+      "category": "temperature",
+      "description": "The drive temperature is below the minimum limit and must be increased to operate the drive.",
+      "possible_causes": [],
+      "diagnostic_steps": [],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": "The E3 IP66 Indoor User Guide V2.00 (page 39) gives a different remedy text for this code: 'Trip occurs when ambient temperature is less than -10°C. Temperature must be raised over -10°C in order to start the drive.'",
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "P-dEF",
+      "display_number": "10",
+      "name": "Factory Default parameters loaded",
+      "category": "status",
+      "description": "",
+      "possible_causes": [],
+      "diagnostic_steps": [],
+      "reset_notes": "The Suggested Remedy cell for this code is blank in the source table. Section 5.5 (Resetting Parameters, page 17) shows that after a factory parameter reset the display shows 'P-dEF', then 'Press the Stop key. The display will show \"StoP\"'.",
+      "related_parameters": [],
+      "variant_note": null,
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "E-triP",
+      "display_number": "11",
+      "name": "External trip",
+      "category": "external input",
+      "description": "E-trip requested on digital input 3. Normally closed contact has opened for some reason.",
+      "possible_causes": [],
+      "diagnostic_steps": ["If motor thermistor is connected check if the motor is too hot."],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": null,
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "SC-Ob5",
+      "display_number": "12",
+      "name": "Optibus comms loss",
+      "category": "communications",
+      "description": "",
+      "possible_causes": [],
+      "diagnostic_steps": [
+        "Check communication link between drive and external devices.",
+        "Make sure each drive in the network has its unique address."
+      ],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": null,
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": true
+    },
+    {
+      "code": "FLt-dc",
+      "display_number": "13",
+      "name": "DC bus ripple too high",
+      "category": "supply / DC bus voltage",
+      "description": "",
+      "possible_causes": [],
+      "diagnostic_steps": ["Check incoming supply phases are all present and balanced."],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": null,
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "P-LOSS",
+      "display_number": "14",
+      "name": "Input phase loss trip",
+      "category": "supply / DC bus voltage",
+      "description": "",
+      "possible_causes": [],
+      "diagnostic_steps": ["Check incoming power supply phases are present and balanced."],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": "Section 7.8 (Fire Mode, page 31) of the same guide prints this code as 'P-LoSS'.",
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "h O-I",
+      "display_number": "15",
+      "name": "Output Over Current",
+      "category": "overcurrent",
+      "description": "",
+      "possible_causes": [],
+      "diagnostic_steps": ["Check for short circuits on the motor and connection cable."],
+      "reset_notes": "NOTE Following a trip, the drive cannot be immediately reset. A delay time is inbuilt, which allows the power components of the drive time to recover to avoid damage. | Table footer NOTE: Following an over current or overload trip (3, 4, 15), the drive may not be reset until the reset time delay has elapsed to prevent damage to the drive.",
+      "related_parameters": [],
+      "variant_note": "Section 7.8 (Fire Mode, page 31) of the same guide refers to 'h O-I' as 'Fast Over-current Trip'.",
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "th-FLt",
+      "display_number": "16",
+      "name": "Faulty thermistor on heatsink",
+      "category": "internal hardware",
+      "description": "",
+      "possible_causes": [],
+      "diagnostic_steps": [],
+      "reset_notes": "The Suggested Remedy cell for this code is blank in the source table.",
+      "related_parameters": [],
+      "variant_note": null,
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "dAtA-F",
+      "display_number": "17",
+      "name": "Internal memory fault (IO)",
+      "category": "internal memory",
+      "description": "",
+      "possible_causes": [],
+      "diagnostic_steps": ["Press the stop key. If the fault persists, consult you supplier."],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": "The phrase 'consult you supplier' is as printed in the source (apparent typo for 'your' left uncorrected).",
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "4-20 F",
+      "display_number": "18",
+      "name": "4-20mA Signal Lost",
+      "category": "analog input",
+      "description": "",
+      "possible_causes": [],
+      "diagnostic_steps": ["Check the analog input connection(s)."],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": "Parameter descriptions for P-16 and P-47 (pages 20 and 24) print this fault code as '4-20F' when describing signal-loss trip behaviour below 3mA.",
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "dAtA-E",
+      "display_number": "19",
+      "name": "Internal memory fault (DSP)",
+      "category": "internal memory",
+      "description": "",
+      "possible_causes": [],
+      "diagnostic_steps": ["Press the stop key. If the fault persists, consult you supplier."],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": "The phrase 'consult you supplier' is as printed in the source (apparent typo for 'your' left uncorrected).",
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "F-Ptc",
+      "display_number": "21",
+      "name": "Motor PTC thermistor trip",
+      "category": "motor protection",
+      "description": "",
+      "possible_causes": [],
+      "diagnostic_steps": ["Connected motor thermistor over temperature, check wiring connections and motor."],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": null,
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "FAn-F",
+      "display_number": "22",
+      "name": "Cooling Fan Fault (IP66 only)",
+      "category": "cooling",
+      "description": "",
+      "possible_causes": [],
+      "diagnostic_steps": ["Check / replace the cooling fan."],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": "The source itself marks this code '(IP66 only)'.",
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "O-hEAt",
+      "display_number": "23",
+      "name": "Drive internal temperature too high",
+      "category": "temperature",
+      "description": "",
+      "possible_causes": [],
+      "diagnostic_steps": ["Drive ambient temperature too high, check adequate cooling air is provided."],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": null,
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "OUt-F",
+      "display_number": "26",
+      "name": "Output Fault",
+      "category": "output",
+      "description": "Indicates a fault on the output of the drive, such as one phase missing, motor phase currents not balanced.",
+      "possible_causes": [],
+      "diagnostic_steps": ["Check the motor and connections."],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": "Section 7.8 (Fire Mode, page 31) of the same guide refers to 'OUt-F' as 'Drive output fault, Output stage trip'.",
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "AtF-01",
+      "display_number": "40",
+      "name": "Autotune Fault",
+      "category": "autotune",
+      "description": "The motor parameters measured through the autotune are not correct.",
+      "possible_causes": [],
+      "diagnostic_steps": [
+        "Check the motor cable and connections for continuity.",
+        "Check all three phases of the motor are present and balanced."
+      ],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": "Listed in the E3 IP66 Indoor User Guide V2.00 fault table, where codes AtF-01 to AtF-05 (Nos. 40-44) share one Autotune Fault entry. The IP20 User Guide V1.05 fault table lists only AtF-02 (No. 41).",
+      "source": { "document": "Optidrive E3 IP66 Indoor User Guide V2.00 (82-E3MAN-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "AtF-02",
+      "display_number": "41",
+      "name": "Autotune Fault",
+      "category": "autotune",
+      "description": "The motor parameters measured through the autotune are not correct.",
+      "possible_causes": [],
+      "diagnostic_steps": [
+        "Check the motor cable and connections for continuity.",
+        "Check all three phases of the motor are present and balanced."
+      ],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": "The IP20 User Guide V1.05 fault table lists only this autotune code (AtF-02, No. 41). The E3 IP66 Indoor User Guide V2.00 (page 39) additionally lists AtF-01, AtF-03, AtF-04, AtF-05 (Nos. 40, 42, 43, 44) sharing the same description and remedies.",
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "AtF-03",
+      "display_number": "42",
+      "name": "Autotune Fault",
+      "category": "autotune",
+      "description": "The motor parameters measured through the autotune are not correct.",
+      "possible_causes": [],
+      "diagnostic_steps": [
+        "Check the motor cable and connections for continuity.",
+        "Check all three phases of the motor are present and balanced."
+      ],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": "Listed in the E3 IP66 Indoor User Guide V2.00 fault table, where codes AtF-01 to AtF-05 (Nos. 40-44) share one Autotune Fault entry. The IP20 User Guide V1.05 fault table lists only AtF-02 (No. 41).",
+      "source": { "document": "Optidrive E3 IP66 Indoor User Guide V2.00 (82-E3MAN-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "AtF-04",
+      "display_number": "43",
+      "name": "Autotune Fault",
+      "category": "autotune",
+      "description": "The motor parameters measured through the autotune are not correct.",
+      "possible_causes": [],
+      "diagnostic_steps": [
+        "Check the motor cable and connections for continuity.",
+        "Check all three phases of the motor are present and balanced."
+      ],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": "Listed in the E3 IP66 Indoor User Guide V2.00 fault table, where codes AtF-01 to AtF-05 (Nos. 40-44) share one Autotune Fault entry (the individual remedy cells for Nos. 43 and 44 are blank; the shared entry text is applied). The IP20 User Guide V1.05 fault table lists only AtF-02 (No. 41).",
+      "source": { "document": "Optidrive E3 IP66 Indoor User Guide V2.00 (82-E3MAN-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "AtF-05",
+      "display_number": "44",
+      "name": "Autotune Fault",
+      "category": "autotune",
+      "description": "The motor parameters measured through the autotune are not correct.",
+      "possible_causes": [],
+      "diagnostic_steps": [
+        "Check the motor cable and connections for continuity.",
+        "Check all three phases of the motor are present and balanced."
+      ],
+      "reset_notes": "",
+      "related_parameters": [],
+      "variant_note": "Listed in the E3 IP66 Indoor User Guide V2.00 fault table, where codes AtF-01 to AtF-05 (Nos. 40-44) share one Autotune Fault entry (the individual remedy cells for Nos. 43 and 44 are blank; the shared entry text is applied). The IP20 User Guide V1.05 fault table lists only AtF-02 (No. 41).",
+      "source": { "document": "Optidrive E3 IP66 Indoor User Guide V2.00 (82-E3MAN-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "SC-F01",
+      "display_number": "50",
+      "name": "Modbus comms loss fault",
+      "category": "communications",
+      "description": "",
+      "possible_causes": [],
+      "diagnostic_steps": [
+        "Check the incoming Modbus RTU connection cable.",
+        "Check that at least one register is being polled cyclically within the timeout limit set in P-36 Index 3."
+      ],
+      "reset_notes": "",
+      "related_parameters": ["P-36"],
+      "variant_note": null,
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    },
+    {
+      "code": "SC-F02",
+      "display_number": "51",
+      "name": "CAN comms loss trip",
+      "category": "communications",
+      "description": "",
+      "possible_causes": [],
+      "diagnostic_steps": [
+        "Check the incoming CAN connection cable.",
+        "Check that cyclic communications take place within the timeout limit set in P-36 Index 3."
+      ],
+      "reset_notes": "",
+      "related_parameters": ["P-36"],
+      "variant_note": null,
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 },
+      "source_unclear": false
+    }
+  ],
+  "general_notes": [
+    {
+      "note": "Table footer (verbatim, IP20 guide): 'NOTE Following an over current or overload trip (3, 4, 15), the drive may not be reset until the reset time delay has elapsed to prevent damage to the drive.'",
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "10.1 Fault Code Messages", "page": 39 }
+    },
+    {
+      "note": "Both IP66 guides print the footer as '(3, 4, 5, 15)'. The IP66 Outdoor guide includes '5' in the footer even though its own table has no No. 05 row.",
+      "source": { "document": "E3 IP66 Indoor User Guide V2.00, page 39; E3 IP66 Outdoor User Guide V1.26, section 11.1, page 56" }
+    },
+    {
+      "note": "Fault reset procedure (verbatim, section 5.6 Resetting a Fault): 'Press the Stop key. The display will show \"StoP\"'.",
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "5.6 Resetting a Fault", "page": 17 }
+    },
+    {
+      "note": "Codes referenced elsewhere in the IP20 guide but NOT present in the section 10.1 fault table: 'Ph-Ib (Phase Imbalance)' and 'SC-trP (Communications Loss Trip)' (both in section 7.8 Fire Mode, page 31), and 'rEd' (switching-frequency reduction indication described under P-17, page 20). 'Stndby' (P-48, page 24), 'StoP', 'FirE', 'H xx.x', 'A x.x', 'P x.xx' (section 5.2, page 16) are operating displays, not fault codes.",
+      "source": { "document": "Optidrive E3 IP20 User Guide V1.05 (82-E3I20-IN)", "section": "7.8 / 6.2 / 5.2", "page": 31 }
+    }
+  ]
+}
