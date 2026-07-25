@@ -478,21 +478,34 @@ SYSTEM_PROMPT = (
     "5. Never invent fault codes, parameter values, or wiring "
     "instructions.\n"
     "6. Use professional, engineering-oriented language. "
-    "No emojis, no casual tone.\n\n"
+    "No emojis, no casual tone.\n"
+    "6b. Search with discipline: at most TWO searches per question, "
+    "then act on the best information found. Never repeat a similar "
+    "query hoping for better results.\n\n"
     "PARAMETER FILE CHANGES (.ptb):\n"
     "7. You also have a tool called `modify_ptb_configuration` that "
     "applies parameter changes to the engineer's uploaded .ptb drive "
     "configuration file.\n"
-    "8. NEVER call it before the engineer has explicitly approved a "
-    "specific change list in this conversation. First propose the "
-    "changes (parameter code, current value if known, new value, "
-    "reason) and ask for approval.\n"
+    "8. When the engineer has uploaded a .ptb and your diagnosis "
+    "identifies parameter changes, call the tool DIRECTLY in the same "
+    "turn with the recommended changes - do not ask for approval "
+    "first. The engineer reviews the change report and decides whether "
+    "to download the modified file; that is the approval step.\n"
     "9. Only call it with the exact file paths given in the SESSION "
     "CONTEXT. If no .ptb file has been uploaded, tell the engineer to "
     "upload one instead of calling the tool.\n"
     "10. After the tool runs, summarise exactly what was applied or "
     "rejected according to its JSON report. Never claim a change was "
-    "made if the report does not confirm it."
+    "made if the report does not confirm it.\n"
+    "11. The modified file reaches the engineer ONLY through the "
+    "download button the platform renders under your answer after a "
+    "successful tool call (success: true). Never claim a file was "
+    "generated or sent without that, and never quote server file paths "
+    "in your answer - direct the engineer to the download button.\n"
+    "12. If the report rejects changes (strict mode aborts the whole "
+    "batch on any rejection), retry the tool in the same turn with "
+    "only the changes that passed validation, and explain the "
+    "rejected ones in your answer."
 )
 
 # =============================================================================
@@ -588,13 +601,16 @@ uploaded_ptb = st.file_uploader(
 )
 
 ptb_input_path = None
-ptb_output_path = None
 if uploaded_ptb is not None:
     workdir = Path(st.session_state.ptb_workdir)
     ptb_input_path = str(workdir / uploaded_ptb.name)
     with open(ptb_input_path, "wb") as fh:
         fh.write(uploaded_ptb.getbuffer())
-    ptb_output_path = str(workdir / f"{Path(uploaded_ptb.name).stem}_modified.ptb")
+    st.caption(
+        f"{uploaded_ptb.name} loaded. Recommended changes are applied to a "
+        "modified copy - review the change report and download it under "
+        "the response."
+    )
 
 st.markdown("---")
 
@@ -631,6 +647,19 @@ if st.button("Submit Query", key="send_button"):
         st.session_state.messages.append(
             {"role": "user", "content": user_input}
         )
+
+        # A fresh output name per query, so one modification never
+        # overwrites another and every report's download stays valid.
+        ptb_output_path = None
+        if ptb_input_path:
+            st.session_state.ptb_seq = st.session_state.get("ptb_seq", 0) + 1
+            ptb_output_path = str(
+                Path(st.session_state.ptb_workdir)
+                / (
+                    f"{Path(ptb_input_path).stem}_modified_"
+                    f"v{st.session_state.ptb_seq}.ptb"
+                )
+            )
 
         context_lines = [
             f"Drive model: {selected_model}",
@@ -677,7 +706,7 @@ if st.button("Submit Query", key="send_button"):
                     response = client.chat.completions.create(
                         model="deepseek-v4-pro",
                         messages=api_messages,
-                        max_tokens=1000,
+                        max_tokens=3000,
                         temperature=0.2,
                         tools=TOOL_DEFINITIONS,
                     )
@@ -685,7 +714,12 @@ if st.button("Submit Query", key="send_button"):
                     tool_calls = assistant_msg.tool_calls
 
                     if not tool_calls:
-                        assistant_text = (assistant_msg.content or "").strip()
+                        # An empty answer here means the token budget died
+                        # mid-reasoning (finish_reason "length"); fall
+                        # through to the forced final call instead.
+                        assistant_text = (
+                            (assistant_msg.content or "").strip() or None
+                        )
                         break
 
                     api_messages.append(assistant_msg)
@@ -725,12 +759,27 @@ if st.button("Submit Query", key="send_button"):
                     response = client.chat.completions.create(
                         model="deepseek-v4-pro",
                         messages=api_messages,
-                        max_tokens=1000,
+                        max_tokens=3000,
                         temperature=0.2,
                     )
                     assistant_text = (
                         response.choices[0].message.content or ""
                     ).strip()
+
+            if not assistant_text:
+                assistant_text = (
+                    "No response was generated. Please resubmit the query."
+                )
+
+            # Keep the modified file's bytes with the message so the
+            # download button outlives the temp file and later overwrites.
+            ptb_bytes = None
+            if ptb_report and ptb_report.get("success"):
+                out = ptb_report.get("output_path")
+                try:
+                    ptb_bytes = Path(out).read_bytes() if out else None
+                except OSError:
+                    ptb_bytes = None
 
             st.session_state.messages.append(
                 {
@@ -738,6 +787,7 @@ if st.button("Submit Query", key="send_button"):
                     "content": assistant_text,
                     "sources": tool_sources,
                     "ptb_report": ptb_report,
+                    "ptb_bytes": ptb_bytes,
                 }
             )
 
@@ -747,7 +797,7 @@ if st.button("Submit Query", key="send_button"):
 # =============================================================================
 # Conversation history
 # =============================================================================
-def render_ptb_report(report: dict, key: str) -> None:
+def render_ptb_report(report: dict, key: str, file_bytes=None) -> None:
     """Render a modify_ptb_configuration JSON report as a branded card."""
     ok = bool(report.get("success"))
     status = (
@@ -797,11 +847,14 @@ def render_ptb_report(report: dict, key: str) -> None:
     st.markdown("".join(parts), unsafe_allow_html=True)
 
     out_path = report.get("output_path")
-    if ok and out_path and Path(out_path).exists():
+    data = file_bytes
+    if data is None and out_path and Path(out_path).exists():
+        data = Path(out_path).read_bytes()
+    if ok and data:
         st.download_button(
             "Download modified .ptb",
-            data=Path(out_path).read_bytes(),
-            file_name=Path(out_path).name,
+            data=data,
+            file_name=Path(out_path).name if out_path else "modified.ptb",
             mime="application/octet-stream",
             key=f"ptb_download_{key}",
         )
@@ -830,7 +883,9 @@ for idx, message in enumerate(st.session_state.messages):
         )
         report = message.get("ptb_report")
         if report:
-            render_ptb_report(report, key=str(idx))
+            render_ptb_report(
+                report, key=str(idx), file_bytes=message.get("ptb_bytes")
+            )
         sources = message.get("sources", [])
         if sources:
             with st.expander("Reference documents"):
