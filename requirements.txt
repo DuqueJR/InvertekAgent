@@ -2,3 +2,5 @@ openai
 python-dotenv
 streamlit
 lxml
+minimalmodbus
+pytest
