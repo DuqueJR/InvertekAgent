@@ -29,6 +29,7 @@ from ui import (
     inject_css,
     render_footer,
     render_header,
+    render_source_chips,
     render_status_panel,
     render_trip_history,
 )
@@ -104,6 +105,15 @@ SYSTEM_PROMPT = (
     "4. If the tool returns no results (found: 0), state that the "
     "information is not available in the E3 knowledge base and "
     "recommend contacting Invertek support.\n"
+    "4b. Judge the results, do not just cite them. If the documents "
+    "returned do not actually answer the question - low relevance, or "
+    "merely adjacent subject matter - say plainly that the E3 knowledge "
+    "base does not cover it and refer the technician to Invertek "
+    "technical support. A weak match is not an answer.\n"
+    "4c. Every factual claim must carry its citation: quote the `source` "
+    "field of the document you used, including the printed page, e.g. "
+    "\"Source: Optidrive E3 IP20 User Guide V1.05, 10.1 Fault Code "
+    "Messages, p.39\". Never cite a document you did not use.\n"
     "5. Never invent fault codes, parameter values, or wiring "
     "instructions.\n"
     "6. Use professional, engineering-oriented language. "
@@ -781,12 +791,28 @@ for idx, message in enumerate(st.session_state.messages):
             )
         sources = message.get("sources", [])
         if sources:
-            with st.expander("Reference documents"):
-                for src in sources:
+            render_source_chips(sources)
+            # Several searches in one turn return the same documents, so
+            # show each one once, at its best relevance.
+            unique = {}
+            for src in sources:
+                key = src.get("id") or src.get("title")
+                try:
+                    score = int(str(src.get("relevance", "0")).rstrip("%"))
+                except ValueError:
+                    score = 0
+                if key not in unique or score > unique[key][0]:
+                    unique[key] = (score, src)
+            with st.expander(f"Reference documents ({len(unique)})"):
+                for score, src in sorted(
+                    unique.values(), key=lambda pair: pair[0], reverse=True
+                ):
                     st.markdown(
-                        f"**{src['id']} &mdash; {src['title']}**  "
-                        f"_(relevance: {src.get('relevance', src.get('score', 'N/A'))})_"
+                        f"**{src['title']}**  "
+                        f"_(relevance: {src.get('relevance', 'N/A')})_"
                     )
+                    if src.get("source"):
+                        st.caption(f"Source: {src['source']}")
                     st.caption(src["content"])
 
 # =============================================================================

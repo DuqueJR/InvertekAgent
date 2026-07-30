@@ -272,6 +272,25 @@ def inject_css() -> None:
         display: block;
         margin-bottom: 4px;
     }}
+    /* ---- CITATION CHIPS ---- */
+    .source-chips {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: -4px 0 12px 0;
+    }}
+    .source-chip {{
+        display: inline-flex;
+        align-items: center;
+        background: {PALETTE['surface_alt']};
+        border: 1px solid {PALETTE['line']};
+        color: {PALETTE['ink_muted']};
+        padding: 3px 12px;
+        font-size: 11px;
+        font-weight: 600;
+        border-radius: 999px;
+    }}
+
     .msg-event {{
         background: {PALETTE['surface_alt']};
         border: 1px dashed {PALETTE['line']};
@@ -573,6 +592,59 @@ def render_trip_history(trips) -> None:
             f'<span>&middot; {trip.fault_name}</span></div>',
             unsafe_allow_html=True,
         )
+
+
+MAX_SOURCE_CHIPS = 6
+
+
+def _chip_label(citation: str) -> str:
+    """Section and page only: every KB entry cites the same user guide, so
+    repeating its title on each chip crowds out the part that differs."""
+    parts = [p.strip() for p in citation.split(",")]
+    if len(parts) > 1 and "User Guide" in parts[0]:
+        parts = parts[1:]
+    return ", ".join(parts) or citation
+
+
+def render_source_chips(sources) -> None:
+    """Citation chips under an answer: section and printed page, best first.
+
+    Gives the technician the same provenance the agent was told to quote,
+    so a weak or irrelevant citation is visible rather than implied. One
+    chip per distinct citation, since several searches in a turn return
+    the same document repeatedly.
+    """
+    best = {}
+    for src in sources:
+        citation = src.get("source") or src.get("title") or src.get("id", "")
+        if not citation:
+            continue
+        try:
+            relevance = int(str(src.get("relevance", "0")).rstrip("%"))
+        except ValueError:
+            relevance = 0
+        if citation not in best or relevance > best[citation]:
+            best[citation] = relevance
+
+    if not best:
+        return
+
+    ranked = sorted(best.items(), key=lambda kv: kv[1], reverse=True)
+    chips = [
+        f'<span class="source-chip" title="{citation}">'
+        f"{_chip_label(citation)} &middot; {relevance}%</span>"
+        for citation, relevance in ranked[:MAX_SOURCE_CHIPS]
+    ]
+    hidden = len(ranked) - len(chips)
+    if hidden > 0:
+        chips.append(
+            f'<span class="source-chip">+{hidden} more in reference '
+            f"documents</span>"
+        )
+    st.markdown(
+        '<div class="source-chips">' + "".join(chips) + "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def render_footer() -> None:
