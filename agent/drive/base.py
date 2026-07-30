@@ -68,6 +68,12 @@ class DriveStatus:
     fault_name: str = ""
     output_freq_hz: float = 0.0
     output_current_a: float = 0.0
+    # Register-backed measurements (Section 8.4 pp.32-35): DC bus voltage is
+    # register 23 (P00-08) and drive temperature register 24 (P00-09). Unlike
+    # frequency and current, these keep reading after a trip, which is what
+    # makes a voltage or thermal fault diagnosable once the output is off.
+    dc_bus_v: float = 0.0
+    heatsink_temp_c: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -83,6 +89,8 @@ class DriveStatus:
             ),
             "output_frequency_hz": self.output_freq_hz,
             "output_current_a": self.output_current_a,
+            "dc_bus_voltage_v": self.dc_bus_v,
+            "drive_temperature_c": self.heatsink_temp_c,
         }
 
 

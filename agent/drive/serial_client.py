@@ -128,6 +128,10 @@ class SerialDriveClient(DriveClient):
             output_current_a=(
                 self._read(regs.REG_OUTPUT_CURRENT) / regs.CURRENT_SCALE
             ),
+            # Both scale 1 per the register map: DC bus 0..1000 V,
+            # temperature 0..100 degC.
+            dc_bus_v=self._read(regs.REG_DC_BUS_V),
+            heatsink_temp_c=self._read(regs.REG_TEMP_C),
         )
 
     def read_trip_history(self) -> list[TripEntry]:

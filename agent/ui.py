@@ -217,6 +217,7 @@ def inject_css() -> None:
     }}
     .status-panel .metric-row:last-child {{ border-bottom: none; }}
     .status-panel .metric-row .value {{ font-weight: 700; color: {PALETTE['ink']}; }}
+    .status-panel .metric-row .value.warn {{ color: {PALETTE['error']}; }}
     .trip-item {{
         background: {PALETTE['surface']};
         border: 1px solid {PALETTE['line']};
@@ -565,6 +566,8 @@ def render_status_panel(status) -> None:
             f'<span class="value">{status.fault_code} &middot; '
             f'{status.fault_name}</span></div>'
         )
+    # The heatsink threshold is KB-backed: P00-23 counts hours above 85 degC.
+    temp_class = "value warn" if status.heatsink_temp_c > 85 else "value"
     st.markdown(
         f"""
         <div class="status-panel">
@@ -574,6 +577,10 @@ def render_status_panel(status) -> None:
             <span class="value">{status.output_freq_hz:.1f} Hz</span></div>
             <div class="metric-row"><span>Output current</span>
             <span class="value">{status.output_current_a:.2f} A</span></div>
+            <div class="metric-row"><span>DC bus voltage</span>
+            <span class="value">{status.dc_bus_v:.0f} V</span></div>
+            <div class="metric-row"><span>Drive temperature</span>
+            <span class="{temp_class}">{status.heatsink_temp_c:.0f} &deg;C</span></div>
             {fault_row}
         </div>
         """,

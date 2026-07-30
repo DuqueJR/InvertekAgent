@@ -27,6 +27,10 @@ def test_read_drive_status_reports_seeded_trip(drive):
     payload = json.loads(read_drive_status(drive=drive))
     assert payload["state"] == "Tripped"
     assert "O-I" in payload["active_fault"]["code"]
+    # DC bus and temperature reach the agent so it can tell a thermal or
+    # voltage fault from a load fault without asking the technician.
+    assert payload["dc_bus_voltage_v"] > 0
+    assert payload["drive_temperature_c"] > 0
 
 
 def test_read_trip_history_returns_four(drive):
