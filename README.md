@@ -99,33 +99,38 @@ InvertekAgent/
 │   │   ├── __init__.py               # Aggregates all tool defs and function maps
 │   │   └── search_invertek_docs.py   # Keyword search across the data/ folder
 │   └── data/                         # Official documentation (ground truth)
-│       ├── fault_codes.json          # Fault codes table (JSON structured)
-│       ├── parameters.json           # Parameters & fault codes (JSON structured)
-│       ├── commissioning-basic.md    # Quick-start / basic commissioning
-│       ├── control-terminals.md      # Control terminal wiring & I/O
-│       ├── modbus-rtu-setup.md       # Modbus RTU communications
-│       ├── modbus-register-map.md    # Modbus register map & status words
-│       ├── power-wiring.md           # Power wiring & supply connections
-│       ├── rating-tables.md          # Input current, fuses, cables
-│       ├── model-numbers.md          # Drive model number decoding
-│       ├── macro-configurations.md   # Analog/digital input macros
-│       ├── mechanical-installation.md
-│       ├── brake-resistor-installation.md
-│       ├── emc-filter-disconnect.md
-│       ├── environmental-and-ul.md
-│       ├── keypad-operation.md
-│       ├── motor-thermistor-connection.md
-│       ├── parameter-and-fault-reset.md
-│       ├── product-overview.md
-│       ├── safety-information.md
-│       ├── single-phase-operation.md
-│       ├── storage-capacitor-reforming.md
-│       └── REVIEW_NOTES.md
+│       ├── fault_codes.json          # 31 fault codes (JSON structured)
+│       ├── parameters.json           # 64 settable + 50 read-only parameters (JSON structured)
+│       ├── manifest.json             # KB build manifest (excluded from search)
+│       ├── REVIEW_NOTES.md           # Curator verification notes (excluded from search)
+│       ├── procedures/               # Step-by-step procedures (10 documents)
+│       │   ├── commissioning-basic.md
+│       │   ├── keypad-operation.md
+│       │   ├── parameter-and-fault-reset.md
+│       │   ├── modbus-rtu-setup.md
+│       │   ├── motor-thermistor-connection.md
+│       │   ├── brake-resistor-installation.md
+│       │   ├── emc-filter-disconnect.md
+│       │   ├── fire-mode.md
+│       │   ├── single-phase-operation.md
+│       │   └── storage-capacitor-reforming.md
+│       └── reference/                # Reference material (11 documents)
+│           ├── product-overview.md
+│           ├── model-numbers.md
+│           ├── control-terminals.md
+│           ├── power-wiring.md
+│           ├── mechanical-installation.md
+│           ├── modbus-register-map.md
+│           ├── macro-configurations.md
+│           ├── rating-tables.md
+│           ├── environmental-and-ul.md
+│           ├── emc-compliant-installation.md
+│           └── safety-information.md
 ├── .gitignore
 └── README.md
 ```
 
-**23 data files** (20 markdown + 3 JSON) covering the complete Optidrive E3 IP20 User Guide V1.05 plus IP66 variant supplements.
+**25 data files** (21 markdown documents + fault codes, parameters, manifest and review notes) covering the complete Optidrive E3 IP20 User Guide V1.05 plus IP66 variant supplements.
 
 ---
 
@@ -139,7 +144,7 @@ Every technical answer is guaranteed to be sourced from real documentation:
 
 3. **Keyword scoring** across frontmatter (title, topic, keywords) and body text ensures relevant documents surface even with partial queries.
 
-4. **Structured JSON parsing** -- `parameters.json` (fault codes with `code`, `name`, `description`, `possible_causes`, `diagnostic_steps`, `reset_notes`) is searched field-by-field, returning precise entries instead of whole-file dumps.
+4. **Structured JSON parsing** -- `fault_codes.json` (entries with `code`, `name`, `description`, `possible_causes`, `diagnostic_steps`, `reset_notes`) and `parameters.json` (entries with `id`, `name`, `function`, `range`, `default`, `source`) are searched field-by-field, returning precise entries instead of whole-file dumps.
 
 5. **No-results guard** -- if no document matches, the tool returns an explicit `"found": 0` message telling the LLM to direct the user to Invertek support (`tools/search_invertek_docs.py:185-193`).
 
@@ -332,5 +337,5 @@ source: "User Guide Section X.Y, page Z"
 
 - The old `rag_engine` dependency has been removed -- all search runs locally against files on disk with no external vector DB.
 - `config.py` is the only module that reads `.env`. Every other module imports keys from `config.py`.
-- macOS binary artifacts (`manifest.json`, `download`) in `data/` are skipped by the search engine's `SKIP_FILES` set.
+- `manifest.json` (KB build manifest) and `REVIEW_NOTES.md` (curator notes) in `data/` are metadata, not drive documentation, and are skipped by the search engine's `SKIP_FILES` set.
 - The architecture is designed for the full three-panel platform: `tools/` package can grow with diagnostic, `.ptb` generation, and analytics tools without touching `client.py`.
