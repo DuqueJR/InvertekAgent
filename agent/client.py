@@ -10,12 +10,27 @@ except Exception:
     Anthropic = None
 
 from config import DEEPSEEK_API_KEY, MODEL
-from drive import apply_change_set
+from drive import (
+    DriveError,
+    SerialDriveClient,
+    SimulatedDriveClient,
+    apply_change_set,
+    list_serial_ports,
+)
 from tools import (
     DRIVE_TOOLS,
+    PTB_PATH_TOOLS,
     TOOL_DEFINITIONS,
     TOOL_MAP,
     modify_ptb_configuration,
+)
+from ui import (
+    PALETTE,
+    inject_css,
+    render_footer,
+    render_header,
+    render_status_panel,
+    render_trip_history,
 )
 
 # Simple Anthropic example (optional). Fill .env with DEEPSEEK_API_KEY and ANTHROPIC_BASE_URL
@@ -54,445 +69,17 @@ PAGE_TITLE = "Invertek Drives | Optidrive Technical Assistant"
 st.set_page_config(
     page_title=PAGE_TITLE,
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 # =============================================================================
-# Invertek Drives brand palette — colours sampled from invertekdrives.com
+# Brand look & feel (palette + CSS live in ui.py)
 # =============================================================================
-PALETTE = {
-    "purple": "#535483",
-    "purple_300": "#7E7AAB",
-    "purple_200": "#8782B4",
-    "purple_hover": "#45466E",
-    "link_blue": "#285FD1",
-    "green": "#63BF4F",
-    "green_alt": "#85B745",
-    "ink": "#1A1A1A",
-    "ink_muted": "#4B4B4B",
-    "surface": "#FFFFFF",
-    "surface_alt": "#F7F7F7",
-    "surface_tile": "#F2F2F2",
-    "panel_black": "#101010",
-    "footer_black": "#000000",
-    "line": "#E2E2EA",
-    "on_purple": "#FFFFFF",
-    "error": "#B42318",
-}
-
-# =============================================================================
-# Global CSS – Invertek Drives look & feel (periwinkle purple, not navy/orange)
-# =============================================================================
-st.markdown(
-    f"""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Mulish:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
-
-    /* ---- RESET & BASE ---- */
-    html, body, .stApp, [data-testid="stAppViewContainer"] {{
-        background: {PALETTE['surface']};
-        color: {PALETTE['ink']};
-        font-family: 'Mulish', 'Museo Sans', 'Segoe UI', system-ui, Arial, sans-serif;
-        font-size: 15px;
-        line-height: 1.6;
-        -webkit-font-smoothing: antialiased;
-    }}
-
-    /* Remove default Streamlit padding and chrome */
-    .block-container {{
-        padding-top: 1rem;
-        max-width: 1280px;
-    }}
-    [data-testid="stHeader"] {{
-        display: none !important;
-    }}
-
-    a {{
-        color: {PALETTE['link_blue']};
-        font-weight: 500;
-        text-decoration: none;
-    }}
-
-    :focus-visible {{
-        outline: 2px solid {PALETTE['purple_200']};
-        outline-offset: 2px;
-    }}
-
-    /* ---- HEADER / TOP BAR ---- */
-    .invertek-header {{
-        background: linear-gradient(90deg, {PALETTE['purple']}, {PALETTE['purple_300']});
-        color: {PALETTE['on_purple']};
-        padding: 16px 28px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        border-radius: 2px;
-    }}
-    .invertek-header .brand {{
-        display: flex;
-        align-items: center;
-        gap: 14px;
-    }}
-    .invertek-header .brand-icon {{
-        width: 40px;
-        height: 40px;
-        background: {PALETTE['surface']};
-        color: {PALETTE['purple']};
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 800;
-        font-size: 20px;
-        border-radius: 2px;
-    }}
-    .invertek-header .brand-text h1 {{
-        margin: 0 !important;
-        padding: 0 !important;
-        font-size: 18px;
-        font-weight: 700;
-        color: {PALETTE['on_purple']};
-        line-height: 1.2;
-    }}
-    .invertek-header .brand-text span {{
-        font-size: 12px;
-        font-weight: 500;
-        color: rgba(255, 255, 255, 0.78);
-        display: block;
-    }}
-    .invertek-header .header-badge {{
-        background: {PALETTE['surface']};
-        color: {PALETTE['purple']};
-        padding: 6px 16px;
-        font-size: 12px;
-        font-weight: 600;
-        border-radius: 999px;
-    }}
-
-    /* ---- BADGE / TRUST MARK (pill chips) ---- */
-    .trust-badge {{
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        background: {PALETTE['surface']};
-        border: 1px solid {PALETTE['line']};
-        color: {PALETTE['ink']};
-        padding: 6px 16px 6px 12px;
-        font-size: 12px;
-        font-weight: 600;
-        border-radius: 999px;
-    }}
-    .trust-badge .dot {{
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: {PALETTE['green']};
-        flex-shrink: 0;
-    }}
-    .trust-badge.cta {{
-        background: {PALETTE['purple']};
-        border-color: {PALETTE['purple']};
-        color: {PALETTE['on_purple']};
-    }}
-    .trust-badge.cta .dot {{
-        background: {PALETTE['green']};
-    }}
-
-    /* ---- HIDE SIDEBAR ---- */
-    [data-testid="stSidebar"] {{
-        display: none !important;
-    }}
-    [data-testid="stSidebarCollapsedControl"] {{
-        display: none !important;
-    }}
-    [data-testid="collapsedControl"] {{
-        display: none !important;
-    }}
-
-    /* ---- CHAT BUBBLES ---- */
-    .msg-user {{
-        background: {PALETTE['surface_tile']};
-        border: 1px solid {PALETTE['line']};
-        border-radius: 2px;
-        padding: 12px 16px;
-        margin-bottom: 10px;
-        color: {PALETTE['ink']};
-        font-size: 14px;
-        line-height: 1.6;
-    }}
-    .msg-user strong {{
-        color: {PALETTE['ink_muted']};
-        font-size: 12px;
-        font-weight: 700;
-        display: block;
-        margin-bottom: 4px;
-    }}
-    .msg-agent {{
-        background: {PALETTE['surface']};
-        border: 1px solid {PALETTE['line']};
-        border-left: 4px solid {PALETTE['purple']};
-        border-radius: 2px;
-        box-shadow: 0 1px 4px rgba(16, 16, 16, 0.10);
-        padding: 12px 16px;
-        margin-bottom: 10px;
-        color: {PALETTE['ink']};
-        font-size: 14px;
-        line-height: 1.6;
-    }}
-    .msg-agent strong {{
-        color: {PALETTE['purple']};
-        font-size: 12px;
-        font-weight: 700;
-        display: block;
-        margin-bottom: 4px;
-    }}
-    .msg-event {{
-        background: {PALETTE['surface_alt']};
-        border: 1px dashed {PALETTE['line']};
-        border-radius: 2px;
-        padding: 8px 16px;
-        margin-bottom: 10px;
-        color: {PALETTE['ink_muted']};
-        font-size: 13px;
-        line-height: 1.5;
-    }}
-    .proposal-status {{
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 12px;
-        font-weight: 700;
-        padding: 4px 14px;
-        border-radius: 999px;
-        margin-bottom: 8px;
-    }}
-    .proposal-status.pending {{
-        background: rgba(83, 84, 131, 0.10);
-        color: {PALETTE['purple']};
-    }}
-    .proposal-status.applied {{
-        background: rgba(99, 191, 79, 0.12);
-        color: {PALETTE['green']};
-    }}
-    .proposal-status.rejected, .proposal-status.superseded {{
-        background: {PALETTE['surface_tile']};
-        color: {PALETTE['ink_muted']};
-    }}
-    .proposal-status.failed {{
-        background: rgba(180, 35, 24, 0.08);
-        color: {PALETTE['error']};
-    }}
-
-    /* ---- BUTTONS (rectangular, near-square corners) ---- */
-    .stButton > button {{
-        background: {PALETTE['purple']};
-        color: {PALETTE['on_purple']};
-        border: none;
-        border-radius: 2px;
-        padding: 10px 28px;
-        font-family: 'Mulish', 'Museo Sans', 'Segoe UI', system-ui, Arial, sans-serif;
-        font-size: 14px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: background 0.2s ease;
-    }}
-    .stButton > button:hover {{
-        background: {PALETTE['purple_hover']};
-        color: {PALETTE['on_purple']};
-    }}
-    .stButton > button:active {{
-        background: {PALETTE['purple_hover']};
-    }}
-
-    /* ---- SECTION HEADERS (purple emphasis) ---- */
-    .section-title {{
-        font-family: 'Mulish', 'Museo Sans', 'Segoe UI', system-ui, Arial, sans-serif;
-        font-size: 18px;
-        font-weight: 700;
-        color: {PALETTE['purple']};
-        line-height: 1.2;
-        padding-bottom: 6px;
-        border-bottom: 2px solid {PALETTE['line']};
-        display: inline-block;
-        margin-bottom: 12px;
-    }}
-
-    /* ---- TABLES ---- */
-    .stTable thead th {{
-        background: {PALETTE['purple']};
-        color: {PALETTE['on_purple']};
-        font-weight: 700;
-        font-size: 13px;
-        padding: 8px 12px;
-    }}
-    .stTable tbody td {{
-        font-size: 14px;
-        padding: 8px 12px;
-    }}
-
-    /* ---- SELECT BOX LABELS (inline controls) ---- */
-    .stSelectbox label, .stTextInput label {{
-        font-family: 'Mulish', 'Museo Sans', 'Segoe UI', system-ui, Arial, sans-serif;
-        font-size: 13px;
-        font-weight: 600;
-        color: {PALETTE['ink_muted']};
-    }}
-
-    /* ---- INPUTS ---- */
-    .stTextInput > div > div > input {{
-        border: 1px solid {PALETTE['line']};
-        border-radius: 2px;
-        background: {PALETTE['surface']};
-        color: {PALETTE['ink']};
-        font-size: 14px;
-        padding: 8px 12px;
-    }}
-    .stTextInput > div > div > input:focus {{
-        border-color: {PALETTE['purple']};
-        box-shadow: 0 0 0 1px {PALETTE['purple']};
-    }}
-
-    /* ---- WARNINGS / ALERTS ---- */
-    .stAlert {{
-        font-size: 14px;
-        font-weight: 500;
-        border-radius: 2px;
-    }}
-
-    /* ---- EXPANDER ---- */
-    .streamlit-expanderHeader {{
-        font-weight: 600;
-        color: {PALETTE['ink']};
-        font-size: 13px;
-    }}
-
-    /* ---- FOOTER (black band) ---- */
-    .invertek-footer {{
-        background: {PALETTE['footer_black']};
-        color: rgba(255, 255, 255, 0.72);
-        border-radius: 2px;
-        padding: 20px 28px;
-        font-size: 12px;
-        margin-top: 24px;
-    }}
-    .invertek-footer strong {{
-        color: {PALETTE['on_purple']};
-        font-weight: 600;
-    }}
-
-    /* ---- LOADER / SPINNER ---- */
-    .stSpinner > div {{
-        border-top-color: {PALETTE['purple']} !important;
-    }}
-
-    /* ---- FILE UPLOADER ---- */
-    [data-testid="stFileUploaderDropzone"] {{
-        background: {PALETTE['surface_alt']};
-        border: 1px dashed {PALETTE['purple_200']};
-        border-radius: 2px;
-    }}
-    [data-testid="stFileUploader"] label {{
-        font-family: 'Mulish', 'Museo Sans', 'Segoe UI', system-ui, Arial, sans-serif;
-        font-size: 13px;
-        font-weight: 600;
-        color: {PALETTE['ink_muted']};
-    }}
-    [data-testid="stFileUploaderDropzone"] button {{
-        background: {PALETTE['surface']};
-        color: {PALETTE['purple']};
-        border: 1px solid {PALETTE['line']};
-        border-radius: 999px;
-        font-weight: 600;
-    }}
-
-    /* ---- DOWNLOAD BUTTON (matches primary button) ---- */
-    .stDownloadButton > button {{
-        background: {PALETTE['purple']};
-        color: {PALETTE['on_purple']};
-        border: none;
-        border-radius: 2px;
-        padding: 10px 28px;
-        font-family: 'Mulish', 'Museo Sans', 'Segoe UI', system-ui, Arial, sans-serif;
-        font-size: 14px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: background 0.2s ease;
-    }}
-    .stDownloadButton > button:hover {{
-        background: {PALETTE['purple_hover']};
-        color: {PALETTE['on_purple']};
-    }}
-
-    /* ---- PTB CHANGE REPORT ---- */
-    .ptb-report {{
-        background: {PALETTE['surface']};
-        border: 1px solid {PALETTE['line']};
-        border-radius: 2px;
-        box-shadow: 0 1px 4px rgba(16, 16, 16, 0.10);
-        padding: 12px 16px;
-        margin-bottom: 10px;
-        font-size: 14px;
-    }}
-    .ptb-report .ptb-status {{
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 12px;
-        font-weight: 700;
-        padding: 4px 14px;
-        border-radius: 999px;
-        margin-bottom: 8px;
-    }}
-    .ptb-report .ptb-status.ok {{
-        background: rgba(99, 191, 79, 0.12);
-        color: {PALETTE['green']};
-    }}
-    .ptb-report .ptb-status.fail {{
-        background: rgba(180, 35, 24, 0.08);
-        color: {PALETTE['error']};
-    }}
-    .ptb-report table {{
-        width: 100%;
-        border-collapse: collapse;
-        margin: 8px 0;
-        font-size: 13px;
-    }}
-    .ptb-report th {{
-        background: {PALETTE['purple']};
-        color: {PALETTE['on_purple']};
-        font-weight: 700;
-        text-align: left;
-        padding: 6px 10px;
-    }}
-    .ptb-report td {{
-        border-bottom: 1px solid {PALETTE['line']};
-        padding: 6px 10px;
-        color: {PALETTE['ink']};
-    }}
-    .ptb-report .ptb-rejected-item {{
-        border-left: 3px solid {PALETTE['error']};
-        background: {PALETTE['surface_alt']};
-        border-radius: 2px;
-        padding: 8px 12px;
-        margin: 6px 0;
-        font-size: 13px;
-    }}
-    .ptb-report .ptb-warning {{
-        color: {PALETTE['ink_muted']};
-        font-size: 12px;
-        margin-top: 6px;
-    }}
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+inject_css()
 
 # =============================================================================
 # Constants
 # =============================================================================
-MODELS = [
-    "Optidrive E3",
-]
-
 CATEGORIES = [
     "Fault Codes & Diagnostics",
     "Motor Parameters",
@@ -531,7 +118,12 @@ SYSTEM_PROMPT = (
     "actually reports before searching the knowledge base.\n"
     "8. If no drive is connected, work from the knowledge base and any "
     "uploaded .ptb file; suggest connecting the drive only when live "
-    "data would change your answer.\n\n"
+    "data would change your answer.\n"
+    "8b. To learn a parameter's current setting, call `read_parameters` "
+    "with the codes you need. It reads the drive live, or the uploaded "
+    ".ptb when there is no connection. NEVER ask the technician to type "
+    "out values you can read yourself — only ask when the tool reports "
+    "them unavailable.\n\n"
     "PARAMETER CHANGES (propose, never apply):\n"
     "9. When your diagnosis calls for parameter changes, call "
     "`propose_parameter_changes` with the exact changes and a short "
@@ -556,46 +148,12 @@ SYSTEM_PROMPT = (
 # =============================================================================
 # Header – top bar
 # =============================================================================
-st.markdown(
-    f"""
-    <div class="invertek-header">
-        <div class="brand">
-            <div class="brand-icon">I</div>
-            <div class="brand-text">
-                <h1>Invertek Drives</h1>
-                <span>Optidrive &mdash; variable frequency drives</span>
-            </div>
-        </div>
-        <div class="header-badge">E3 diagnostics</div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-# =============================================================================
-# Trust badges row
-# =============================================================================
-st.markdown(
-    f"""
-    <div style="padding:12px 28px; display:flex; gap:12px; flex-wrap:wrap;">
-        <div class="trust-badge">
-            <span class="dot"></span> Global support network
-        </div>
-        <div class="trust-badge">
-            <span class="dot"></span> ISO 9001 certified
-        </div>
-        <div class="trust-badge cta">
-            <span class="dot"></span> Optidrive E3
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+render_header()
 
 st.write(
-    "Consult fault codes, parameter settings and wiring diagrams for "
-    "Invertek Optidrive E3 variable frequency drives. Upload a .ptb "
-    "configuration file to propose and apply approved parameter changes."
+    "Connect the drive to read its live status and trip history, then "
+    "describe the problem. Parameter fixes appear as a preview you "
+    "approve before anything is written to the drive."
 )
 
 # =============================================================================
@@ -605,57 +163,134 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 api_key = DEEPSEEK_API_KEY
+selected_model = "Optidrive E3"
 
 # =============================================================================
-# Control panel – inline model / category / firmware selectors
-# =============================================================================
-col1, col2, col3 = st.columns([2, 2, 1])
-with col1:
-    selected_model = st.selectbox(
-        "VFD model",
-        MODELS,
-        label_visibility="visible",
-    )
-with col2:
-    selected_category = st.selectbox(
-        "Category",
-        CATEGORIES,
-        label_visibility="visible",
-    )
-with col3:
-    firmware = st.text_input(
-        "Firmware",
-        value="",
-        placeholder="e.g. v2.10",
-        label_visibility="visible",
-    )
-
-# =============================================================================
-# Drive configuration file (.ptb) upload
+# Sidebar – drive connection, live status, trip history, .ptb upload
 # =============================================================================
 if "ptb_workdir" not in st.session_state:
     st.session_state.ptb_workdir = tempfile.mkdtemp(prefix="invertek_ptb_")
 
-uploaded_ptb = st.file_uploader(
-    "Drive configuration file (.ptb) — optional",
-    type=["ptb"],
-    help=(
-        "Upload the drive's parameter file to let the assistant propose "
-        "and, once you approve, apply parameter changes."
-    ),
-)
+drive_client = st.session_state.get("drive_client")
+drive_connected = drive_client is not None and drive_client.is_connected
 
-ptb_input_path = None
-if uploaded_ptb is not None:
-    workdir = Path(st.session_state.ptb_workdir)
-    ptb_input_path = str(workdir / uploaded_ptb.name)
-    with open(ptb_input_path, "wb") as fh:
-        fh.write(uploaded_ptb.getbuffer())
-    st.caption(
-        f"{uploaded_ptb.name} loaded. Recommended changes are applied to a "
-        "modified copy - review the change report and download it under "
-        "the response."
+with st.sidebar:
+    st.markdown(
+        '<div class="sidebar-title">Drive connection</div>',
+        unsafe_allow_html=True,
     )
+    connection_mode = st.radio(
+        "Connection mode",
+        ["Simulator", "Serial (USB-RS485)"],
+        key="connection_mode",
+        disabled=drive_connected,
+        help=(
+            "Simulator behaves like a real E3 for demos. Serial talks "
+            "Modbus RTU through a USB-to-RS485 adapter."
+        ),
+    )
+
+    if not drive_connected:
+        if connection_mode == "Simulator":
+            if st.button("Connect", key="connect_button"):
+                client = SimulatedDriveClient()
+                client.connect()
+                st.session_state.drive_client = client
+                st.session_state.drive_mode = "simulator"
+                st.rerun()
+        else:
+            ports = list_serial_ports()
+            port = st.selectbox(
+                "Serial port",
+                ports or ["No ports detected"],
+                key="serial_port",
+                disabled=not ports,
+            )
+            baud = st.number_input(
+                "Baud rate", value=115200, step=9600, key="serial_baud",
+                help="Drive default is 115200 (P-36 index 2).",
+            )
+            address = st.number_input(
+                "Drive address", value=1, min_value=1, max_value=63,
+                key="serial_address",
+                help="Set in P-36 index 1; factory default 1.",
+            )
+            if st.button("Connect", key="connect_button", disabled=not ports):
+                try:
+                    client = SerialDriveClient(
+                        port, baud=int(baud), address=int(address)
+                    )
+                    client.connect()
+                    st.session_state.drive_client = client
+                    st.session_state.drive_mode = f"serial {port}"
+                    st.rerun()
+                except DriveError as exc:
+                    st.error(str(exc))
+    else:
+        if st.button("Disconnect", key="disconnect_button"):
+            drive_client.disconnect()
+            st.session_state.drive_client = None
+            st.rerun()
+
+        st.markdown(
+            '<div class="sidebar-title">Drive status</div>',
+            unsafe_allow_html=True,
+        )
+        try:
+            live_status = drive_client.read_status()
+            render_status_panel(live_status)
+            render_trip_history(drive_client.read_trip_history())
+        except DriveError as exc:
+            st.error(f"Drive read failed: {exc}")
+
+        if st.button("Refresh status", key="refresh_status"):
+            st.rerun()
+
+        if isinstance(drive_client, SimulatedDriveClient):
+            st.markdown(
+                '<div class="sidebar-title">Simulator controls</div>',
+                unsafe_allow_html=True,
+            )
+            sim_run, sim_stop, sim_trip = st.columns(3)
+            if sim_run.button("Run", key="sim_run"):
+                drive_client.simulate_run()
+                st.rerun()
+            if sim_stop.button("Stop", key="sim_stop"):
+                drive_client.simulate_stop()
+                st.rerun()
+            if sim_trip.button("Trip", key="sim_trip"):
+                drive_client.simulate_trip(3)  # O-I, output over current
+                st.rerun()
+
+    st.markdown(
+        '<div class="sidebar-title">Configuration file</div>',
+        unsafe_allow_html=True,
+    )
+    uploaded_ptb = st.file_uploader(
+        "Drive configuration file (.ptb) — optional",
+        type=["ptb"],
+        help=(
+            "Upload the drive's parameter file so approved changes also "
+            "produce a modified copy you can download."
+        ),
+    )
+
+    ptb_input_path = None
+    if uploaded_ptb is not None:
+        workdir = Path(st.session_state.ptb_workdir)
+        ptb_input_path = str(workdir / uploaded_ptb.name)
+        with open(ptb_input_path, "wb") as fh:
+            fh.write(uploaded_ptb.getbuffer())
+        st.caption(
+            f"{uploaded_ptb.name} loaded. Approved changes produce a "
+            "modified copy to download from the proposal card."
+        )
+
+    with st.expander("Session details"):
+        selected_category = st.selectbox("Category", CATEGORIES)
+        firmware = st.text_input(
+            "Firmware", value="", placeholder="e.g. v3.11"
+        )
 
 st.markdown("---")
 
@@ -701,10 +336,21 @@ if st.button("Submit Query", key="send_button"):
             context_lines.append(f"Firmware: {firmware.strip()}")
         drive_client = st.session_state.get("drive_client")
         if drive_client is not None and drive_client.is_connected:
-            context_lines.append(
+            connection_line = (
                 "Drive connection: connected "
                 f"({st.session_state.get('drive_mode', 'simulator')})."
             )
+            try:
+                s = drive_client.read_status()
+                connection_line += f" Current drive state: {s.state_label}"
+                if s.tripped:
+                    connection_line += (
+                        f" ({s.fault_code} - {s.fault_name})"
+                    )
+                connection_line += "."
+            except DriveError:
+                pass
+            context_lines.append(connection_line)
         else:
             context_lines.append("Drive connection: no drive is connected.")
         if ptb_input_path:
@@ -773,9 +419,11 @@ if st.button("Submit Query", key="send_button"):
                         func_args = json.loads(tc.function.arguments)
 
                         # Drive tools always act on this session's own
-                        # connection, regardless of what the model sent.
+                        # connection and file, regardless of what the model sent.
                         if func_name in DRIVE_TOOLS:
                             func_args["drive"] = drive_client
+                        if func_name in PTB_PATH_TOOLS:
+                            func_args["ptb_path"] = ptb_input_path
 
                         func = TOOL_MAP.get(func_name)
                         if func is None:
@@ -938,13 +586,18 @@ def _approve_proposal(message) -> None:
         for c in proposal["changes"]
     ]
     notice = []
-    failed = False
+    # The drive is the authority on whether a change took effect; the .ptb
+    # copy is a convenience artefact, so a file shortfall is reported as a
+    # warning and never downgrades a verified drive write to "failed".
+    drive_outcome = None   # True/False once attempted, None if no drive
+    ptb_outcome = None
     try:
         drive = st.session_state.get("drive_client")
         if drive is not None and drive.is_connected:
             report = apply_change_set(drive, changes)
             message["apply_report"] = report
-            if report["success"]:
+            drive_outcome = bool(report["success"])
+            if drive_outcome:
                 applied = ", ".join(
                     f"{c['code']} {c['old_display']} -> {c['new_display']}"
                     f" {c['units'] or ''}".rstrip()
@@ -955,7 +608,6 @@ def _approve_proposal(message) -> None:
                     f"{applied}."
                 )
             else:
-                failed = True
                 reasons = "; ".join(
                     f"{r.get('code') or '?'}: {r['message']}"
                     for r in report["rejected"]
@@ -975,41 +627,54 @@ def _approve_proposal(message) -> None:
                     f"v{st.session_state.ptb_seq}.ptb"
                 )
             )
+            # Non-strict: write the parameters this file actually contains
+            # and report the rest, rather than abandoning the whole copy.
             ptb_report = json.loads(modify_ptb_configuration(
                 ptb_input_path=ptb_input_path,
                 changes=changes,
                 output_path=out_path,
+                strict=False,
             ))
             message["ptb_report"] = ptb_report
-            if ptb_report.get("success"):
+            ptb_outcome = bool(ptb_report.get("success"))
+            if ptb_outcome:
                 try:
                     message["ptb_bytes"] = Path(
                         ptb_report["output_path"]
                     ).read_bytes()
                 except OSError:
                     message["ptb_bytes"] = None
+                skipped = ptb_report.get("rejected", [])
                 notice.append(
                     "A modified .ptb copy is ready to download under the "
                     "proposal card."
+                    + (
+                        f" {len(skipped)} change(s) were not present in the "
+                        f"file and were left out of the copy."
+                        if skipped else ""
+                    )
                 )
             else:
-                failed = True
                 reasons = "; ".join(
                     f"{r.get('code') or '?'}: {r['message']}"
                     for r in ptb_report.get("rejected", [])
                 )
-                notice.append(f".ptb modification failed: {reasons}")
+                notice.append(
+                    "The .ptb copy could not be written, which does not "
+                    f"affect the drive itself: {reasons}"
+                )
 
-        if len(notice) == 0 or (
-            not failed
-            and message.get("apply_report") is None
-            and message.get("ptb_report") is None
-        ):
+        if drive_outcome is None and ptb_outcome is None:
             failed = True
             notice = [
                 "Nothing to apply: connect a drive or upload a .ptb file, "
                 "then approve again."
             ]
+        elif drive_outcome is not None:
+            # A drive was connected: its result decides the outcome.
+            failed = not drive_outcome
+        else:
+            failed = not ptb_outcome
     except Exception as exc:
         failed = True
         notice.append(f"Apply aborted by an unexpected error: {exc}")
@@ -1127,16 +792,4 @@ for idx, message in enumerate(st.session_state.messages):
 # =============================================================================
 # Footer
 # =============================================================================
-st.markdown(
-    f"""
-    <div class="invertek-footer">
-        <strong>Invertek Drives</strong> &mdash; A world leader in
-        variable frequency drive technology.
-        &nbsp;&middot;&nbsp;
-        Optidrive E3 Technical Support Tool
-        &nbsp;&middot;&nbsp;
-        &copy; {__import__('datetime').datetime.now().year} Invertek Drives
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+render_footer()

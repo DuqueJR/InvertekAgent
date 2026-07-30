@@ -6,6 +6,7 @@ from agent.drive import SimulatedDriveClient
 from agent.tools.drive_tools import (
     propose_parameter_changes,
     read_drive_status,
+    read_parameters,
     read_trip_history,
 )
 
@@ -33,6 +34,53 @@ def test_read_trip_history_returns_four(drive):
     assert len(payload["trips"]) == 4
     assert payload["trips"][0]["position"] == 0
     assert "O-I" in payload["trips"][0]["code"]
+
+
+def test_read_parameters_prefers_the_live_drive(drive):
+    payload = json.loads(read_parameters(codes=["P-03", "P-08"], drive=drive))
+    by_code = {p["code"]: p for p in payload["parameters"]}
+    assert by_code["P-03"]["value"] == 5.0  # KB default, seeded
+    assert by_code["P-03"]["source"].startswith("drive")
+    assert by_code["P-03"]["units"] == "s"
+    assert payload["unavailable"] == []
+
+
+def test_read_parameters_reports_unknown_codes(drive):
+    payload = json.loads(read_parameters(codes=["P-99"], drive=drive))
+    assert payload["parameters"] == []
+    assert "not in the E3 parameter registry" in payload["unavailable"][0]["reason"]
+
+
+def test_read_parameters_falls_back_to_the_ptb_file(tmp_path):
+    import gzip
+    import sys
+
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).parent))
+    from test_ptb_modifier import build_xml
+
+    ptb = tmp_path / "drive.ptb"
+    ptb.write_bytes(gzip.compress(build_xml().encode("utf-8")))
+
+    payload = json.loads(read_parameters(
+        codes=["P-03", "P-11"], drive=None, ptb_path=str(ptb),
+    ))
+    by_code = {p["code"]: p for p in payload["parameters"]}
+    assert by_code["P-03"]["value"] == 5.0  # 500 raw / scale 100
+    assert by_code["P-03"]["source"] == "uploaded .ptb file"
+    # P-11 is absent from this file: reported, never guessed.
+    assert payload["unavailable"][0]["code"] == "P-11"
+    assert "keypad" in payload["unavailable"][0]["reason"]
+
+
+def test_read_parameters_without_drive_or_file():
+    payload = json.loads(read_parameters(codes=["P-03"], drive=None))
+    assert payload["parameters"] == []
+    assert payload["unavailable"][0]["code"] == "P-03"
+
+
+def test_read_parameters_requires_codes(drive):
+    payload = json.loads(read_parameters(codes=[], drive=drive))
+    assert "error" in payload
 
 
 def test_propose_validates_and_reads_current_value(drive):
