@@ -3,7 +3,9 @@ from pathlib import Path
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
-SKIP_FILES = {"manifest", "download"}
+# manifest.json is KB metadata; REVIEW_NOTES.md is curator meta — neither is
+# drive documentation, so both stay out of search results.
+SKIP_FILES = {"manifest", "REVIEW_NOTES"}
 
 
 def _parse_frontmatter(text):
@@ -95,21 +97,35 @@ def _search_json_faults(data, terms, file_id):
 
 def _search_json_parameters(data, terms, file_id):
     results = []
-    params = data.get("parameters", [])
-    for param in params:
+    settable = data.get("parameters", [])
+    read_only = data.get("read_only_status_parameters", [])
+    for param in settable + read_only:
         searchable = json.dumps(param).lower()
         score = _score_text(searchable, terms)
+        code = param.get("id", "?")
+        # An exact code in the query (e.g. "P-08") must outrank entries that
+        # merely repeat common words like "motor" or "current".
+        if code.lower() in terms:
+            score += 1.0
         if score > 0:
             parts = []
-            if param.get("number"):
-                parts.append(f"P-{param['number']}")
-            if param.get("name"):
-                parts.append(f"Name: {param['name']}")
-            if param.get("description"):
-                parts.append(f"Desc: {param['description']}")
+            if param.get("group"):
+                parts.append(f"Group: {param['group']}")
+            if param.get("function"):
+                parts.append(f"Function: {param['function']}")
+            if param.get("explanation"):
+                parts.append(f"Explanation: {param['explanation']}")
+            rng = param.get("range") or {}
+            if rng.get("min") is not None or rng.get("max") is not None:
+                units = rng.get("units") or ""
+                parts.append(f"Range: {rng.get('min', '?')} to {rng.get('max', '?')} {units}".rstrip())
+            if param.get("default"):
+                parts.append(f"Default: {param['default']}")
+            if param.get("notes"):
+                parts.append(f"Notes: {param['notes']}")
             results.append({
-                "id": f"{file_id}__{param.get('number', '')}",
-                "title": f"P-{param.get('number', '?')} {param.get('name', '')}",
+                "id": f"{file_id}__{code}",
+                "title": f"{code} {param.get('name', '')}".strip(),
                 "content": _truncate(" | ".join(parts)),
                 "score": score,
             })
@@ -133,7 +149,10 @@ def search_invertek_docs(query: str, category: str = "") -> str:
 
     results = []
 
-    for filepath in sorted(DATA_DIR.iterdir()):
+    # The KB nests prose under procedures/ and reference/, so walk recursively.
+    for filepath in sorted(DATA_DIR.rglob("*")):
+        if not filepath.is_file():
+            continue
         if filepath.stem in SKIP_FILES:
             continue
         if filepath.suffix not in (".md", ".json"):
@@ -187,7 +206,7 @@ def search_invertek_docs(query: str, category: str = "") -> str:
     results = results[:5]
 
     for r in results:
-        r["relevance"] = f"{r['score']:.0%}"
+        r["relevance"] = f"{min(r['score'], 0.99):.0%}"
         del r["score"]
 
     if not results:
