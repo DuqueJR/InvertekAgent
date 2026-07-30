@@ -9,8 +9,14 @@ try:
 except Exception:
     Anthropic = None
 
-from config import DEEPSEEK_API_KEY
-from tools import TOOL_DEFINITIONS, TOOL_MAP
+from config import DEEPSEEK_API_KEY, MODEL
+from drive import apply_change_set
+from tools import (
+    DRIVE_TOOLS,
+    TOOL_DEFINITIONS,
+    TOOL_MAP,
+    modify_ptb_configuration,
+)
 
 # Simple Anthropic example (optional). Fill .env with DEEPSEEK_API_KEY and ANTHROPIC_BASE_URL
 # You can copy-paste this to run a quick test.
@@ -238,6 +244,42 @@ st.markdown(
         font-weight: 700;
         display: block;
         margin-bottom: 4px;
+    }}
+    .msg-event {{
+        background: {PALETTE['surface_alt']};
+        border: 1px dashed {PALETTE['line']};
+        border-radius: 2px;
+        padding: 8px 16px;
+        margin-bottom: 10px;
+        color: {PALETTE['ink_muted']};
+        font-size: 13px;
+        line-height: 1.5;
+    }}
+    .proposal-status {{
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 700;
+        padding: 4px 14px;
+        border-radius: 999px;
+        margin-bottom: 8px;
+    }}
+    .proposal-status.pending {{
+        background: rgba(83, 84, 131, 0.10);
+        color: {PALETTE['purple']};
+    }}
+    .proposal-status.applied {{
+        background: rgba(99, 191, 79, 0.12);
+        color: {PALETTE['green']};
+    }}
+    .proposal-status.rejected, .proposal-status.superseded {{
+        background: {PALETTE['surface_tile']};
+        color: {PALETTE['ink_muted']};
+    }}
+    .proposal-status.failed {{
+        background: rgba(180, 35, 24, 0.08);
+        color: {PALETTE['error']};
     }}
 
     /* ---- BUTTONS (rectangular, near-square corners) ---- */
@@ -482,30 +524,33 @@ SYSTEM_PROMPT = (
     "6b. Search with discipline: at most TWO searches per question, "
     "then act on the best information found. Never repeat a similar "
     "query hoping for better results.\n\n"
-    "PARAMETER FILE CHANGES (.ptb):\n"
-    "7. You also have a tool called `modify_ptb_configuration` that "
-    "applies parameter changes to the engineer's uploaded .ptb drive "
-    "configuration file.\n"
-    "8. When the engineer has uploaded a .ptb and your diagnosis "
-    "identifies parameter changes, call the tool DIRECTLY in the same "
-    "turn with the recommended changes - do not ask for approval "
-    "first. The engineer reviews the change report and decides whether "
-    "to download the modified file; that is the approval step.\n"
-    "9. Only call it with the exact file paths given in the SESSION "
-    "CONTEXT. If no .ptb file has been uploaded, tell the engineer to "
-    "upload one instead of calling the tool.\n"
-    "10. After the tool runs, summarise exactly what was applied or "
-    "rejected according to its JSON report. Never claim a change was "
-    "made if the report does not confirm it.\n"
-    "11. The modified file reaches the engineer ONLY through the "
-    "download button the platform renders under your answer after a "
-    "successful tool call (success: true). Never claim a file was "
-    "generated or sent without that, and never quote server file paths "
-    "in your answer - direct the engineer to the download button.\n"
-    "12. If the report rejects changes (strict mode aborts the whole "
-    "batch on any rejection), retry the tool in the same turn with "
-    "only the changes that passed validation, and explain the "
-    "rejected ones in your answer."
+    "LIVE DRIVE (Modbus RTU):\n"
+    "7. When the SESSION CONTEXT says a drive is connected, begin any "
+    "diagnosis of drive behaviour by calling `read_drive_status` and "
+    "`read_trip_history` — ground your reasoning in what the drive "
+    "actually reports before searching the knowledge base.\n"
+    "8. If no drive is connected, work from the knowledge base and any "
+    "uploaded .ptb file; suggest connecting the drive only when live "
+    "data would change your answer.\n\n"
+    "PARAMETER CHANGES (propose, never apply):\n"
+    "9. When your diagnosis calls for parameter changes, call "
+    "`propose_parameter_changes` with the exact changes and a short "
+    "rationale. The tool only validates: NOTHING is applied by it.\n"
+    "10. The platform then shows the technician a preview card (exact "
+    "current -> new values) with Approve and Reject buttons under your "
+    "answer. Tell the technician to review and approve it there. NEVER "
+    "claim a change was applied, a file was written, or a download is "
+    "ready - approval has not happened yet when you answer.\n"
+    "11. On approval the platform writes each parameter to the "
+    "connected drive over Modbus, verifies each write by reading it "
+    "back, and produces a modified .ptb download when a file is "
+    "uploaded. The outcome arrives in the conversation as a platform "
+    "notice; trust only that notice when later describing what was "
+    "applied.\n"
+    "12. If the tool rejects some changes, propose again in the same "
+    "turn with only the valid ones and explain the rejected ones in "
+    "your answer. Physical fixes (wiring, cooling, mechanical) are "
+    "step-by-step instructions, not parameter proposals."
 )
 
 # =============================================================================
@@ -648,32 +693,24 @@ if st.button("Submit Query", key="send_button"):
             {"role": "user", "content": user_input}
         )
 
-        # A fresh output name per query, so one modification never
-        # overwrites another and every report's download stays valid.
-        ptb_output_path = None
-        if ptb_input_path:
-            st.session_state.ptb_seq = st.session_state.get("ptb_seq", 0) + 1
-            ptb_output_path = str(
-                Path(st.session_state.ptb_workdir)
-                / (
-                    f"{Path(ptb_input_path).stem}_modified_"
-                    f"v{st.session_state.ptb_seq}.ptb"
-                )
-            )
-
         context_lines = [
             f"Drive model: {selected_model}",
             f"Question category: {selected_category}",
         ]
         if firmware.strip():
             context_lines.append(f"Firmware: {firmware.strip()}")
+        drive_client = st.session_state.get("drive_client")
+        if drive_client is not None and drive_client.is_connected:
+            context_lines.append(
+                "Drive connection: connected "
+                f"({st.session_state.get('drive_mode', 'simulator')})."
+            )
+        else:
+            context_lines.append("Drive connection: no drive is connected.")
         if ptb_input_path:
             context_lines.append(
-                "Uploaded .ptb configuration file (ptb_input_path): "
-                f"{ptb_input_path}"
-            )
-            context_lines.append(
-                f"Write any modified .ptb to (output_path): {ptb_output_path}"
+                "A .ptb configuration file is uploaded; approved parameter "
+                "changes also produce a modified copy for download."
             )
         else:
             context_lines.append("No .ptb configuration file has been uploaded.")
@@ -688,14 +725,22 @@ if st.button("Submit Query", key="send_button"):
                 ),
             },
         ]
+        # Platform events (approval outcomes) replay as user-side notices
+        # so the model knows what was actually applied.
         api_messages.extend(
-            {"role": m["role"], "content": m["content"]}
+            {
+                "role": "user" if m["role"] == "event" else m["role"],
+                "content": (
+                    f"[Platform notice] {m['content']}"
+                    if m["role"] == "event" else m["content"]
+                ),
+            }
             for m in st.session_state.messages
         )
 
         try:
             tool_sources = []
-            ptb_report = None
+            pending_proposal = None
             assistant_text = None
 
             # Iterative tool loop: the model may search, read the results,
@@ -704,7 +749,7 @@ if st.button("Submit Query", key="send_button"):
             with st.spinner("Analysing query..."):
                 for _ in range(MAX_TOOL_ROUNDS):
                     response = client.chat.completions.create(
-                        model="deepseek-v4-pro",
+                        model=MODEL,
                         messages=api_messages,
                         max_tokens=3000,
                         temperature=0.2,
@@ -727,11 +772,10 @@ if st.button("Submit Query", key="send_button"):
                         func_name = tc.function.name
                         func_args = json.loads(tc.function.arguments)
 
-                        # The modify tool only ever reads/writes the files of
-                        # this session, regardless of what paths the model sent.
-                        if func_name == "modify_ptb_configuration":
-                            func_args["ptb_input_path"] = ptb_input_path or ""
-                            func_args["output_path"] = ptb_output_path or ""
+                        # Drive tools always act on this session's own
+                        # connection, regardless of what the model sent.
+                        if func_name in DRIVE_TOOLS:
+                            func_args["drive"] = drive_client
 
                         func = TOOL_MAP.get(func_name)
                         if func is None:
@@ -751,13 +795,14 @@ if st.button("Submit Query", key="send_button"):
                         parsed = json.loads(result)
                         if func_name == "search_invertek_docs":
                             tool_sources.extend(parsed.get("documents", []))
-                        elif func_name == "modify_ptb_configuration":
-                            ptb_report = parsed
+                        elif func_name == "propose_parameter_changes":
+                            if parsed.get("proposal_ok"):
+                                pending_proposal = parsed["proposal"]
 
                 if assistant_text is None:
                     # Tool budget exhausted: force a final plain-text answer.
                     response = client.chat.completions.create(
-                        model="deepseek-v4-pro",
+                        model=MODEL,
                         messages=api_messages,
                         max_tokens=3000,
                         temperature=0.2,
@@ -771,25 +816,27 @@ if st.button("Submit Query", key="send_button"):
                     "No response was generated. Please resubmit the query."
                 )
 
-            # Keep the modified file's bytes with the message so the
-            # download button outlives the temp file and later overwrites.
-            ptb_bytes = None
-            if ptb_report and ptb_report.get("success"):
-                out = ptb_report.get("output_path")
-                try:
-                    ptb_bytes = Path(out).read_bytes() if out else None
-                except OSError:
-                    ptb_bytes = None
-
-            st.session_state.messages.append(
-                {
-                    "role": "assistant",
-                    "content": assistant_text,
-                    "sources": tool_sources,
-                    "ptb_report": ptb_report,
-                    "ptb_bytes": ptb_bytes,
+            message = {
+                "role": "assistant",
+                "content": assistant_text,
+                "sources": tool_sources,
+            }
+            if pending_proposal is not None:
+                # Only one proposal can be pending at a time.
+                for m in st.session_state.messages:
+                    p = m.get("proposal")
+                    if p and p["status"] == "pending":
+                        p["status"] = "superseded"
+                st.session_state.proposal_seq = (
+                    st.session_state.get("proposal_seq", 0) + 1
+                )
+                message["proposal"] = {
+                    "id": st.session_state.proposal_seq,
+                    "status": "pending",
+                    "changes": pending_proposal["changes"],
+                    "rationale": pending_proposal.get("rationale", ""),
                 }
-            )
+            st.session_state.messages.append(message)
 
         except Exception as exc:
             st.error(f"API connection error: {exc}")
@@ -797,13 +844,19 @@ if st.button("Submit Query", key="send_button"):
 # =============================================================================
 # Conversation history
 # =============================================================================
-def render_ptb_report(report: dict, key: str, file_bytes=None) -> None:
-    """Render a modify_ptb_configuration JSON report as a branded card."""
+def render_ptb_report(
+    report: dict,
+    key: str,
+    file_bytes=None,
+    ok_label="Configuration file updated",
+    fail_label="No configuration file written",
+) -> None:
+    """Render a change report (drive or .ptb) as a branded card."""
     ok = bool(report.get("success"))
     status = (
-        '<span class="ptb-status ok">Configuration file updated</span>'
+        f'<span class="ptb-status ok">{ok_label}</span>'
         if ok
-        else '<span class="ptb-status fail">No configuration file written</span>'
+        else f'<span class="ptb-status fail">{fail_label}</span>'
     )
     drive_bits = " &middot; ".join(
         str(report[k])
@@ -860,6 +913,174 @@ def render_ptb_report(report: dict, key: str, file_bytes=None) -> None:
         )
 
 
+PROPOSAL_STATUS_LABELS = {
+    "pending": "Awaiting your approval",
+    "applied": "Applied and verified",
+    "rejected": "Rejected - nothing was changed",
+    "failed": "Apply failed - see details",
+    "superseded": "Superseded by a newer proposal",
+}
+
+
+def _approve_proposal(message) -> None:
+    """Platform-side apply: Modbus write + verify, then the .ptb copy.
+
+    Runs inside the button-click rerun. Any exception marks the proposal
+    failed so a re-render can never double-apply.
+    """
+    proposal = message["proposal"]
+    changes = [
+        {
+            "code": c["code"],
+            "new_value": c["new_value"],
+            "reason": c.get("reason", ""),
+        }
+        for c in proposal["changes"]
+    ]
+    notice = []
+    failed = False
+    try:
+        drive = st.session_state.get("drive_client")
+        if drive is not None and drive.is_connected:
+            report = apply_change_set(drive, changes)
+            message["apply_report"] = report
+            if report["success"]:
+                applied = ", ".join(
+                    f"{c['code']} {c['old_display']} -> {c['new_display']}"
+                    f" {c['units'] or ''}".rstrip()
+                    for c in report["applied"]
+                )
+                notice.append(
+                    f"Written to the drive and verified by read-back: "
+                    f"{applied}."
+                )
+            else:
+                failed = True
+                reasons = "; ".join(
+                    f"{r.get('code') or '?'}: {r['message']}"
+                    for r in report["rejected"]
+                )
+                notice.append(f"Drive write failed: {reasons}")
+        else:
+            notice.append(
+                "No drive connected, so nothing was written over Modbus."
+            )
+
+        if ptb_input_path:
+            st.session_state.ptb_seq = st.session_state.get("ptb_seq", 0) + 1
+            out_path = str(
+                Path(st.session_state.ptb_workdir)
+                / (
+                    f"{Path(ptb_input_path).stem}_modified_"
+                    f"v{st.session_state.ptb_seq}.ptb"
+                )
+            )
+            ptb_report = json.loads(modify_ptb_configuration(
+                ptb_input_path=ptb_input_path,
+                changes=changes,
+                output_path=out_path,
+            ))
+            message["ptb_report"] = ptb_report
+            if ptb_report.get("success"):
+                try:
+                    message["ptb_bytes"] = Path(
+                        ptb_report["output_path"]
+                    ).read_bytes()
+                except OSError:
+                    message["ptb_bytes"] = None
+                notice.append(
+                    "A modified .ptb copy is ready to download under the "
+                    "proposal card."
+                )
+            else:
+                failed = True
+                reasons = "; ".join(
+                    f"{r.get('code') or '?'}: {r['message']}"
+                    for r in ptb_report.get("rejected", [])
+                )
+                notice.append(f".ptb modification failed: {reasons}")
+
+        if len(notice) == 0 or (
+            not failed
+            and message.get("apply_report") is None
+            and message.get("ptb_report") is None
+        ):
+            failed = True
+            notice = [
+                "Nothing to apply: connect a drive or upload a .ptb file, "
+                "then approve again."
+            ]
+    except Exception as exc:
+        failed = True
+        notice.append(f"Apply aborted by an unexpected error: {exc}")
+
+    proposal["status"] = "failed" if failed else "applied"
+    st.session_state.messages.append({
+        "role": "event",
+        "content": (
+            f"Proposal {'could not be applied' if failed else 'approved'}. "
+            + " ".join(notice)
+        ),
+    })
+
+
+def render_proposal_card(message, key: str) -> None:
+    proposal = message["proposal"]
+    status = proposal["status"]
+    label = PROPOSAL_STATUS_LABELS.get(status, status)
+    parts = [
+        '<div class="ptb-report">',
+        f'<span class="proposal-status {status}">Proposed parameter '
+        f"changes &middot; {label}</span>",
+    ]
+    if proposal.get("rationale"):
+        parts.append(
+            f'<div class="ptb-warning">{proposal["rationale"]}</div>'
+        )
+    rows = "".join(
+        f"<tr><td>{c['code']}</td>"
+        f"<td>{c['name']}</td>"
+        f"<td>{'&mdash;' if c.get('current_display') is None else c['current_display']}"
+        f" &rarr; <strong>{c['new_display']}</strong>"
+        f" {c.get('units') or ''}</td>"
+        f"<td>{c.get('reason', '')}</td></tr>"
+        for c in proposal["changes"]
+    )
+    parts.append(
+        "<table><thead><tr><th>Code</th><th>Parameter</th>"
+        "<th>Current &rarr; new</th><th>Reason</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table>"
+    )
+    parts.append("</div>")
+    st.markdown("".join(parts), unsafe_allow_html=True)
+
+    if status == "pending":
+        pid = proposal["id"]
+        col_approve, col_reject, _ = st.columns([1, 1, 3])
+        if col_approve.button("Approve and apply", key=f"approve_{pid}"):
+            _approve_proposal(message)
+            st.rerun()
+        if col_reject.button("Reject", key=f"reject_{pid}"):
+            proposal["status"] = "rejected"
+            st.session_state.messages.append({
+                "role": "event",
+                "content": (
+                    "Proposal rejected by the technician. Nothing was "
+                    "changed."
+                ),
+            })
+            st.rerun()
+
+    apply_report = message.get("apply_report")
+    if apply_report is not None:
+        render_ptb_report(
+            apply_report,
+            key=f"drive_{key}",
+            ok_label="Drive updated - every write verified by read-back",
+            fail_label="Drive not updated",
+        )
+
+
 st.markdown("---")
 st.markdown(
     '<div class="section-title">Conversation log</div>',
@@ -874,6 +1095,11 @@ for idx, message in enumerate(st.session_state.messages):
             f"</div>",
             unsafe_allow_html=True,
         )
+    elif message["role"] == "event":
+        st.markdown(
+            f"<div class='msg-event'>{message['content']}</div>",
+            unsafe_allow_html=True,
+        )
     else:
         st.markdown(
             f"<div class='msg-agent'>"
@@ -881,6 +1107,8 @@ for idx, message in enumerate(st.session_state.messages):
             f"</div>",
             unsafe_allow_html=True,
         )
+        if message.get("proposal"):
+            render_proposal_card(message, key=str(idx))
         report = message.get("ptb_report")
         if report:
             render_ptb_report(
