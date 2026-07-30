@@ -433,4 +433,8 @@ def test_tool_is_registered_in_sync():
 
     names = {d["function"]["name"] for d in TOOL_DEFINITIONS}
     assert names == set(TOOL_MAP)
-    assert "modify_ptb_configuration" in names
+    # The modify tool must NOT be model-visible: the platform calls it
+    # itself when the technician approves a proposal card, so the model
+    # cannot bypass the approval step.
+    assert "modify_ptb_configuration" not in names
+    assert "propose_parameter_changes" in names
