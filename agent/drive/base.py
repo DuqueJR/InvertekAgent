@@ -42,6 +42,19 @@ def fault_lookup(number: int) -> tuple[str, str]:
     return fault.get("code", f"{int(number):02d}"), fault.get("name", "Unknown")
 
 
+def fault_source(number: int) -> str:
+    """Citation for a fault code, so trip diagnoses are traceable too."""
+    fault = _fault_table().get(int(number))
+    source = (fault or {}).get("source")
+    if not isinstance(source, dict):
+        return ""
+    parts = [source.get("document"), source.get("section")]
+    page = source.get("page")
+    if page not in (None, ""):
+        parts.append(f"p.{page}")
+    return ", ".join(str(p) for p in parts if p)
+
+
 @dataclass
 class DriveStatus:
     connected: bool = False
@@ -86,6 +99,7 @@ class TripEntry:
             "number": self.fault_number,
             "code": self.fault_code,
             "name": self.fault_name,
+            "source": fault_source(self.fault_number),
         }
 
 

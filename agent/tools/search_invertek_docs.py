@@ -1,4 +1,7 @@
 import json
+import math
+import re
+from functools import lru_cache
 from pathlib import Path
 
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -25,16 +28,143 @@ def _parse_frontmatter(text):
     return frontmatter, body
 
 
+# Words that carry no retrieval signal. Without this list a question like
+# "how do I service the fan bearings" scored 99% on every document (each
+# "the"/"do" occurrence added to the score), so the found:0 honesty path
+# never fired and the agent always had something to cite.
+STOPWORDS = {
+    "the", "and", "for", "with", "that", "this", "from", "what", "when",
+    "how", "why", "does", "did", "are", "was", "you", "your", "can",
+    "should", "would", "will", "have", "has", "any", "all", "but", "not",
+    "its", "it's", "there", "then", "than", "them", "they", "get", "got",
+    "out", "off", "into", "onto", "about", "after", "before", "every",
+    "some", "such", "which", "while", "just", "only", "also", "been",
+    "being", "here", "very", "much", "more", "most", "need", "needs",
+    "want", "wants", "know", "please", "help", "tell", "give", "show",
+    "make", "made", "take", "keeps", "keep", "time", "times", "still",
+    "now", "one", "two", "use", "used", "using", "see", "look", "like",
+    "may", "might", "must", "could", "shall", "who", "whom", "whose",
+    "where", "because", "since", "each", "both", "over", "under",
+    # Short function words. Left in, they matched almost every document
+    # and inflated coverage to the point that found:0 never fired.
+    "is", "of", "do", "in", "to", "on", "at", "by", "or", "if", "as",
+    "be", "an", "my", "we", "so", "no", "up", "it", "am", "me", "us",
+    "our", "his", "her", "was", "were", "had", "doing", "done", "goes",
+}
+
+# A result must cover a meaningful share of the query's real terms to be
+# offered as a citation. Below this the tool reports found:0 so the agent
+# says plainly that the knowledge base does not cover the question.
+MIN_RELEVANCE = 0.34
+
+
+def _terms_of(query: str) -> list:
+    """Meaningful search terms: punctuation stripped, stopwords removed."""
+    raw = [t.strip(".,;:!?()[]{}'\"") for t in query.lower().split()]
+    raw = [t for t in raw if t]
+    terms = [t for t in raw if len(t) > 1 and t not in STOPWORDS]
+    # A query made entirely of stopwords still deserves a literal attempt.
+    return terms or raw
+
+
+@lru_cache(maxsize=512)
+def _term_pattern(term: str):
+    """Whole-word matcher for a term, tolerating a plural 's'.
+
+    Substring matching used to count "is" inside "resistance" and similar,
+    which is how unrelated questions scored full marks.
+    """
+    stem = term[:-1] if len(term) > 3 and term.endswith("s") else term
+    return re.compile(rf"(?<!\w){re.escape(stem)}s?(?!\w)")
+
+
+def _count_term(text_lower: str, term: str) -> int:
+    return len(_term_pattern(term).findall(text_lower))
+
+
+@lru_cache(maxsize=1)
+def _corpus() -> tuple:
+    """Every searchable unit as one lowercased blob, for term statistics."""
+    blobs = []
+    for filepath in sorted(DATA_DIR.rglob("*")):
+        if (not filepath.is_file() or filepath.stem in SKIP_FILES
+                or filepath.suffix not in (".md", ".json")):
+            continue
+        try:
+            raw = filepath.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        if filepath.suffix == ".json":
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            for key in ("faults", "parameters", "read_only_status_parameters"):
+                for entry in data.get(key, []):
+                    blobs.append(json.dumps(entry).lower())
+        else:
+            blobs.append(raw.lower())
+    return tuple(blobs)
+
+
+@lru_cache(maxsize=1024)
+def _idf(term: str) -> float:
+    """Inverse document frequency: how much signal this term carries.
+
+    Words present in nearly every document ("drive", "motor", "invertek")
+    approach zero, so a question that only shares those words with the
+    knowledge base scores near zero and reaches the found:0 path instead
+    of being answered from an irrelevant citation.
+    """
+    corpus = _corpus()
+    if not corpus:
+        return 1.0
+    df = sum(1 for blob in corpus if _term_pattern(term).search(blob))
+    return math.log(len(corpus) / (1 + df))
+
+
 def _score_text(text, terms):
+    """Relevance as the share of the query's *informative* weight matched.
+
+    Each term counts in proportion to its IDF, so covering the rare,
+    meaningful terms of a question matters and covering only its filler
+    does not. Repetition adds a small bonus. Scores stay comparable
+    across documents so MIN_RELEVANCE can separate "covered by the
+    knowledge base" from "not covered".
+    """
+    if not terms:
+        return 0.0
     text_lower = text.lower()
-    score = 0.0
+    total_weight = 0.0
+    matched_weight = 0.0
+    bonus = 0.0
     for term in terms:
-        count = text_lower.count(term)
+        weight = max(_idf(term), 0.01)
+        total_weight += weight
+        count = _count_term(text_lower, term)
         if count:
-            score += count * 0.1
-            if f" {term} " in f" {text_lower} ":
-                score += 0.05
-    return min(score, 0.99)
+            matched_weight += weight
+            bonus += min(count, 5) * 0.01
+    if not matched_weight or not total_weight:
+        return 0.0
+    return min(matched_weight / total_weight + bonus, 0.99)
+
+
+def _format_source(source):
+    """Render a KB source object as a citable one-liner.
+
+    Every KB entry carries {document, section, page}; the agent is required
+    to quote this verbatim, so keep the printed page number intact.
+    """
+    if isinstance(source, str):
+        return source
+    if not isinstance(source, dict):
+        return ""
+    parts = [source.get("document"), source.get("section")]
+    page = source.get("page")
+    if page not in (None, ""):
+        parts.append(f"p.{page}")
+    return ", ".join(str(p) for p in parts if p)
 
 
 def _truncate(text, max_len=600):
@@ -90,6 +220,7 @@ def _search_json_faults(data, terms, file_id):
                 "id": f"{file_id}__{fault.get('code', fault.get('display_number', ''))}",
                 "title": f"{fault.get('name', 'Unknown')} ({fault.get('code', 'N/A')})",
                 "content": _truncate(" | ".join(parts)),
+                "source": _format_source(fault.get("source")),
                 "score": score,
             })
     return results
@@ -127,6 +258,7 @@ def _search_json_parameters(data, terms, file_id):
                 "id": f"{file_id}__{code}",
                 "title": f"{code} {param.get('name', '')}".strip(),
                 "content": _truncate(" | ".join(parts)),
+                "source": _format_source(param.get("source")),
                 "score": score,
             })
     return results
@@ -142,10 +274,7 @@ def _search_json_structure(data, terms, file_id):
 
 
 def search_invertek_docs(query: str, category: str = "") -> str:
-    query_lower = query.lower()
-    terms = [t for t in query_lower.split() if len(t) > 1]
-    if not terms:
-        terms = [query_lower]
+    terms = _terms_of(query)
 
     results = []
 
@@ -175,7 +304,13 @@ def search_invertek_docs(query: str, category: str = "") -> str:
         frontmatter, body = _parse_frontmatter(raw)
 
         fm_text = " ".join(f"{k} {v}" for k, v in frontmatter.items())
-        score = _score_text(fm_text, terms) * 0.4 + _score_text(body, terms) * 0.6
+        # The body carries the answer; the frontmatter (title, topic,
+        # keywords) is a boost rather than half the signal, so a document
+        # that fully covers the query in prose is not penalised for having
+        # terse metadata.
+        score = min(
+            _score_text(body, terms) + 0.3 * _score_text(fm_text, terms), 0.99
+        )
 
         # Category is a soft boost, never a hard filter: the UI labels
         # ("Fault Codes & Diagnostics") don't literally appear in the
@@ -199,9 +334,14 @@ def search_invertek_docs(query: str, category: str = "") -> str:
                 "id": filepath.stem,
                 "title": title,
                 "content": snippet,
+                "source": _format_source(frontmatter.get("source")),
                 "score": score,
             })
 
+    # Drop weak matches rather than dressing them up as citations: an
+    # answer the knowledge base does not support must reach the found:0
+    # path so the agent says so plainly.
+    results = [r for r in results if r["score"] >= MIN_RELEVANCE]
     results.sort(key=lambda r: r["score"], reverse=True)
     results = results[:5]
 
@@ -237,7 +377,9 @@ SEARCH_TOOL_DEF = {
             "wiring diagrams (2-wire and 3-wire start/stop), "
             "installation requirements, and EMC compliance. "
             "Use this tool BEFORE answering any technical question "
-            "about Optidrive E3 to ensure accuracy."
+            "about Optidrive E3 to ensure accuracy. Every result carries "
+            "a `source` field naming the document, section and printed "
+            "page - quote it verbatim in your answer."
         ),
         "parameters": {
             "type": "object",
