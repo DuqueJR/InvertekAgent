@@ -12,6 +12,7 @@ except Exception:
 from config import DEEPSEEK_API_KEY, MODEL
 from drive import (
     DriveError,
+    ScenarioBag,
     SerialDriveClient,
     SimulatedDriveClient,
     apply_change_set,
@@ -246,6 +247,7 @@ with st.sidebar:
             '<div class="sidebar-title">Drive status</div>',
             unsafe_allow_html=True,
         )
+        live_status = None
         try:
             live_status = drive_client.read_status()
             render_status_panel(live_status)
@@ -261,16 +263,62 @@ with st.sidebar:
                 '<div class="sidebar-title">Simulator controls</div>',
                 unsafe_allow_html=True,
             )
+            if "scenario_bag" not in st.session_state:
+                st.session_state.scenario_bag = ScenarioBag()
+
             sim_run, sim_stop, sim_trip = st.columns(3)
             if sim_run.button("Run", key="sim_run"):
-                drive_client.simulate_run()
+                # An armed fault trips the start attempt instead of running.
+                st.session_state.sim_started = drive_client.simulate_run()
                 st.rerun()
             if sim_stop.button("Stop", key="sim_stop"):
                 drive_client.simulate_stop()
                 st.rerun()
             if sim_trip.button("Trip", key="sim_trip"):
-                drive_client.simulate_trip(3)  # O-I, output over current
+                scenario = st.session_state.scenario_bag.next()
+                if st.session_state.get("trip_on_start"):
+                    drive_client.arm_scenario(scenario)
+                else:
+                    drive_client.apply_scenario(scenario)
+                st.session_state.last_scenario = scenario.label
                 st.rerun()
+
+            st.checkbox(
+                "Trip on next start",
+                key="trip_on_start",
+                help=(
+                    "Arm the fault instead of applying it now: the drive will "
+                    "trip every time you press Run until its cause is fixed."
+                ),
+            )
+
+            armed = drive_client.armed_scenario
+            if armed is not None:
+                st.caption(
+                    f"Armed: {armed.label}. Press Run to attempt a start."
+                )
+            elif st.session_state.get("last_scenario"):
+                st.caption(f"Tripped: {st.session_state.last_scenario}")
+            if st.session_state.get("sim_started") is False:
+                st.caption("The drive tripped on the start attempt.")
+
+            blocked = drive_client.reset_blocked_for_s
+            if st.button(
+                "Reset fault",
+                key="sim_reset",
+                disabled=not (live_status is not None and live_status.tripped),
+            ):
+                try:
+                    drive_client.reset_fault()
+                except DriveError as exc:
+                    st.warning(str(exc))
+                else:
+                    st.rerun()
+            if blocked > 0:
+                st.caption(
+                    f"Reset inhibited for {blocked:.0f}s more "
+                    "(over-current/overload trips need a recovery delay)."
+                )
 
     st.markdown(
         '<div class="sidebar-title">Configuration file</div>',

@@ -16,16 +16,32 @@ cd agent && ../.venv/bin/streamlit run client.py
 
 - [ ] Sidebar shows **Drive connection** with Simulator selected.
 - [ ] Press **Connect**. The status card appears: red **Tripped** chip,
-      output frequency `0.0 Hz`, output current `0.00 A`, active fault
-      `O-I · Output Over Current`.
+      output frequency `0.0 Hz`, output current `0.00 A`, DC bus `325 V`,
+      drive temperature `48 °C`, active fault `O-I · Output Over Current`.
+      This opener is deliberately fixed so the demo always starts the same
+      way.
 - [ ] **Trip history (last 4)** lists `O-I`, `O-I`, `I_t-trP`, `E-triP`.
 - [ ] **Simulator controls** appear. Press **Run**: the chip turns green
       (**Running**), frequency reads ~50 Hz and current ~2 A. Press
-      **Stop**: back to **Stopped**. Press **Trip**: back to
-      **Tripped / O-I**.
+      **Stop**: back to **Stopped**.
 - [ ] If the sidebar is collapsed, the `»` chevron at the top left
       reopens it. (It lives in the Streamlit toolbar; do not hide the
       toolbar or the panel becomes unreachable.)
+
+### 1b. Fault variety
+
+- [ ] Press **Trip** nine times. Each press produces a **different** fault
+      with telemetry that matches it — every scenario appears once before
+      any repeats, and the same fault never comes up twice running. The
+      caption under the buttons names what you triggered.
+- [ ] Spot-check the signatures: `U-Volt` reads a low DC bus (~196 V),
+      `O-Volt` a high one (~448 V), `O-t` a drive temperature above 85 °C
+      **shown in red**, and `F-Ptc` leaves every drive reading normal —
+      the motor is hot, the drive is not.
+- [ ] After an `O-I`, `I_t-trP` or `h O-I` trip, **Reset fault** is refused
+      with a recovery-delay message for ~10 s, then succeeds. (Section 10.1
+      p.39 documents the lockout for faults 3, 4 and 15; the duration is
+      our choice, since the guide never states it.)
 
 ## 2. Diagnose with citations
 
@@ -77,6 +93,24 @@ Leave the drive connected and tripped.
       **Partly applied** and **Drive partly updated**, never "not
       updated": the technician must not be told nothing changed when
       something did.
+
+### 4b. Fix the cause and watch the drive start
+
+This is the loop worth demonstrating: the fault keeps recurring until the
+parameter behind it is corrected.
+
+- [ ] Tick **Trip on next start**, then press **Trip**. The caption reads
+      *"Armed: …"* and the drive does **not** trip yet — but the cause is
+      already in the parameter bank, as on a real misconfigured drive.
+- [ ] Press **Run**. The drive trips on the start attempt
+      (*"The drive tripped on the start attempt"*). Press **Run** again — it
+      trips again. This is the classic complaint reproduced exactly.
+- [ ] Ask the agent to diagnose it, then **Approve and apply** its parameter
+      change.
+- [ ] Press **Run** once more. **The drive now runs.** If the scenario was
+      a physical cause instead — `h O-I`, `U-Volt`, `P-LOSS`, `F-Ptc` — no
+      parameter change clears it, and the agent should say so rather than
+      inventing one.
 
 ## 5. Reject
 

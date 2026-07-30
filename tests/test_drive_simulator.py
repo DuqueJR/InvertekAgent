@@ -81,6 +81,21 @@ def test_run_stop_flips_state(drive):
     assert drive.read_status().state_label == "Stopped"
 
 
+def test_running_telemetry_is_plausible(drive):
+    drive.simulate_run()
+    status = drive.read_status()
+    # A healthy 230 V-class drive: bus near 325 V, heatsink well under the
+    # 85 degC threshold that P00-23 counts hours above.
+    assert 300 <= status.dc_bus_v <= 350
+    assert 30 <= status.heatsink_temp_c <= 85
+
+
+def test_status_dict_exposes_the_new_telemetry(drive):
+    payload = drive.read_status().to_dict()
+    assert "dc_bus_voltage_v" in payload
+    assert "drive_temperature_c" in payload
+
+
 def test_parameter_write_read_back_round_trip(drive):
     raw = drive.read_parameter("P-03")
     drive.write_parameter("P-03", raw + 100)
