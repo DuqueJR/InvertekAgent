@@ -18,9 +18,33 @@ The complete platform has three panels:
 | **Analysis** | Historical intelligence on resolved issues | Issues history → Metrics → Patterns → Trends → Success rates |
 | **Knowledge** | Conversational technical assistant backed by official documentation | User question → Knowledge Base → LLM → Grounded technical answer |
 
-### Sprint scope -- Knowledge panel (implemented)
+### Sprint scope -- implemented
 
-This sprint delivers the **Knowledge panel**: a Streamlit-based conversational agent that answers technical questions about the Optidrive E3 using **only** official documentation. Zero hallucinations by design -- every answer is sourced from real files on disk.
+The build now covers the field-technician loop end to end: the technician
+connects a laptop to the drive, the app reads live status and trip history
+over **Modbus RTU**, the agent diagnoses from official documentation with a
+citation on every claim, and parameter fixes are **proposed** for the
+technician to **approve with a button** before anything is written. On
+approval the platform writes each parameter over Modbus, verifies it by
+reading it back, and produces a modified `.ptb` for download.
+
+| Capability | Where |
+|---|---|
+| Live drive status, trip history, parameter reads | `agent/drive/`, sidebar panel |
+| Software drive simulator (no hardware needed) | `agent/drive/simulator.py` |
+| Grounded answers with document + section + page | `agent/tools/search_invertek_docs.py` |
+| Propose → technician approves → write + read-back verify | `propose_parameter_changes`, `agent/drive/apply.py` |
+| Safety gate (drive must be stopped) | `agent/drive/apply.py` |
+| `.ptb` parameter profile generation | `agent/tools/ptb/` |
+
+Scope is deliberately tight: Optidrive E3 only, one drive at a time, one
+technician per session, cloud reasoning, simplicity above all.
+
+Zero hallucinations by design -- every answer is sourced from real files on
+disk, and questions the knowledge base does not cover are declined rather
+than answered from an adjacent document. See
+[`docs/e2e-checklist.md`](docs/e2e-checklist.md) to verify all of this in
+about five minutes without a drive.
 
 ```
                            ┌──────────────────────┐
@@ -94,10 +118,19 @@ InvertekAgent/
 ├── .env                              # API key (DEEPSEEK_API_KEY)
 ├── agent/
 │   ├── config.py                     # Env loading, API key + model constants
-│   ├── client.py                     # Streamlit UI, agent loop, LLM orchestration
+│   ├── client.py                     # Streamlit app: state, agent loop, approval flow
+│   ├── ui.py                         # Palette, CSS and render helpers
+│   ├── drive/                        # Live drive over Modbus RTU
+│   │   ├── registers.py              # E3 register map (User Guide S8.4)
+│   │   ├── base.py                   # DriveClient interface, status/trip types
+│   │   ├── simulator.py              # In-memory E3 stand-in for demos
+│   │   ├── serial_client.py          # Real drive via USB-RS485 (minimalmodbus)
+│   │   └── apply.py                  # Approved writes: safety gate + read-back verify
 │   ├── tools/
 │   │   ├── __init__.py               # Aggregates all tool defs and function maps
-│   │   └── search_invertek_docs.py   # Keyword search across the data/ folder
+│   │   ├── search_invertek_docs.py   # Keyword search across the data/ folder
+│   │   ├── drive_tools.py            # Status, trips, parameter reads, proposals
+│   │   └── ptb/                      # .ptb reading and modification + registry
 │   └── data/                         # Official documentation (ground truth)
 │       ├── fault_codes.json          # 31 fault codes (JSON structured)
 │       ├── parameters.json           # 64 settable + 50 read-only parameters (JSON structured)
@@ -126,6 +159,9 @@ InvertekAgent/
 │           ├── environmental-and-ul.md
 │           ├── emc-compliant-installation.md
 │           └── safety-information.md
+├── docs/e2e-checklist.md             # Pre-demo verification walkthrough
+├── scripts/generate_e3_registry.py   # Rebuilds the .ptb registry from the KB
+├── tests/                            # 69 tests, no hardware required
 ├── .gitignore
 └── README.md
 ```
@@ -142,33 +178,38 @@ Every technical answer is guaranteed to be sourced from real documentation:
 
 2. **The tool reads ONLY from `data/`** -- no external API, no vector DB, no model-generated content. Every result comes from files on disk (`tools/search_invertek_docs.py:4`).
 
-3. **Keyword scoring** across frontmatter (title, topic, keywords) and body text ensures relevant documents surface even with partial queries.
+3. **Relevance you can trust** -- a document's score is the share of the query's *informative* terms it matches: stopwords are dropped, matching is whole-word (so "is" does not count inside "resistance"), and terms are weighted by inverse document frequency so a question sharing only "drive" or "invertek" with the corpus scores near zero. Frontmatter (title, topic, keywords) boosts; the body carries the signal.
+
+3b. **Citations on every result** -- each hit returns a `source` naming the document, section and printed page, which the prompt requires the agent to quote. The UI renders them as chips so a weak citation is visible rather than implied.
 
 4. **Structured JSON parsing** -- `fault_codes.json` (entries with `code`, `name`, `description`, `possible_causes`, `diagnostic_steps`, `reset_notes`) and `parameters.json` (entries with `id`, `name`, `function`, `range`, `default`, `source`) are searched field-by-field, returning precise entries instead of whole-file dumps.
 
-5. **No-results guard** -- if no document matches, the tool returns an explicit `"found": 0` message telling the LLM to direct the user to Invertek support (`tools/search_invertek_docs.py:185-193`).
+5. **No-results guard** -- matches below `MIN_RELEVANCE` are discarded rather than dressed up as citations, so an uncovered question reaches the explicit `"found": 0` message that tells the agent to direct the technician to Invertek support. The prompt additionally requires the agent to decline when the documents returned do not actually answer the question: a weak match is not an answer.
 
-6. **System prompt explicitly forbids invention** -- rules 3-5 mandate answering exclusively from tool results and never inventing codes, values, or instructions.
+6. **The model cannot apply anything** -- `modify_ptb_configuration` is deliberately not in the model-visible tool set. The agent can only *propose*; the platform performs the write after the technician presses Approve, then reports back what actually happened as a platform notice the agent must trust over its own expectations.
+
+7. **System prompt explicitly forbids invention** -- rules 3-5 mandate answering exclusively from tool results and never inventing codes, values, or instructions.
 
 ### Verification
 
-Tested 13 queries across fault codes, parameters, wiring, installation, and Modbus categories -- **all returned real documents** with 0 blank responses.
+```bash
+.venv/bin/python -m pytest tests/     # 69 tests, no drive hardware needed
+```
 
-| Query | Category | Results |
-|---|---|---|
-| `O-I fault` | Fault code | 5 |
-| `P-08 motor current` | Parameter | 5 |
-| `2-wire start stop` | Wiring | 5 |
-| `single phase derating` | Installation | 5 |
-| `modbus register 2001` | Modbus | 4 |
-| `brake resistor overload` | Fault | 5 |
-| `EMC filter` | Installation | 5 |
-| `U-Volt dc bus` | Fault | 5 |
-| `O-temp over temperature` | Fault | 5 |
-| `mechanical installation IP20` | Installation | 5 |
-| `control terminals wiring` | Wiring | 5 |
-| `P-Loss input phase` | Fault | 5 |
-| `autotune P-03` | Parameter | 5 |
+`tests/test_search_docs.py` pins both grounding properties: every result
+for a covered question carries a document/section/page citation, and
+out-of-scope questions (fan bearings, pricing, EtherCAT, chocolate cake)
+return `found: 0`. Eight representative covered questions -- O-I, U-Volt,
+ramp times, factory reset, single-phase operation, thermistor wiring, EMC
+installation, maximum frequency -- are asserted to keep retrieving.
+
+`tests/test_drive_simulator.py` and `tests/test_drive_tools.py` cover the
+drive layer: the safety gate, read-back verification, batch abort on a
+failed write, proposal validation, and `P-15 -> register 143` from the
+guide's own worked example.
+
+For the manual walkthrough (simulator, approval, download, refusal) see
+[`docs/e2e-checklist.md`](docs/e2e-checklist.md).
 
 ---
 
@@ -177,8 +218,11 @@ Tested 13 queries across fault codes, parameters, wiring, installation, and Modb
 ### 1. Install dependencies
 
 ```bash
-pip install streamlit openai python-dotenv
+pip install -r requirements.txt
 ```
+
+`openai`, `python-dotenv`, `streamlit`, `lxml`, `minimalmodbus` (Modbus RTU
+over the USB-RS485 adapter, pulls in `pyserial`) and `pytest`.
 
 ### 2. Configure API key
 
@@ -211,34 +255,86 @@ The search engine that grounds the Knowledge panel. Accepts `query` (required) a
 - **JSON files**: iterates `faults[]` and `parameters[]` arrays, scores each entry individually, returns structured snippets with code/name/causes/steps
 - **Markdown files**: parses YAML frontmatter (`title`, `topic`, `keywords`), scores against frontmatter + body, returns the most relevant text section
 
-Top 5 results by relevance score. Score weights: 60% body text, 40% frontmatter metadata.
+Top 5 results above `MIN_RELEVANCE`. Relevance is the share of the query's
+IDF-weighted terms a document matches (whole-word, stopwords removed);
+frontmatter adds a boost rather than half the score. Every result carries a
+`source` for citation.
+
+### `tools/drive_tools.py`
+The agent's only access to the drive, and none of it writes:
+`read_drive_status`, `read_trip_history`, `read_parameters` (live over
+Modbus, falling back to the uploaded `.ptb`) and
+`propose_parameter_changes`, which validates a change set against the
+registry and hands it to the platform for the technician to approve.
+
+### `drive/`
+`DriveClient` has two implementations behind one interface:
+`SimulatedDriveClient` (in-memory E3, seeded to a tripped O-I scenario with
+a four-entry trip log) and `SerialDriveClient` (real drive over USB-RS485,
+8N1, 115200 baud, zero-based register addressing). `apply.py` performs
+approved writes: it refuses unless the drive is connected *and stopped*,
+writes each parameter, reads it back to confirm, and aborts the batch on the
+first failure.
+
+Documented limitations: the guide defines no Modbus register for the
+last-four trip log (`P00-13` is keypad-only), so on real hardware the log
+shows the active trip plus trips observed during the session; and the
+parameter register formula `128 + n` covers `P-04..P-60` only, so P-01..P-03
+are `.ptb`-only over Modbus.
 
 ### `tools/__init__.py`
 Package aggregator. Imports each tool module and exports `TOOL_DEFINITIONS` (list of OpenAI function schemas) and `TOOL_MAP` (name -> function). To add a new tool, create a `tools/my_tool.py`, import it here, done.
 
-### `client.py`
-Streamlit app with Invertek industrial branding (navy + orange palette). Agent loop:
-1. User submits query
-2. First LLM call with `TOOL_DEFINITIONS` -- LLM decides whether to invoke the search tool
-3. If tool called: execute `search_invertek_docs`, feed results back as tool message
-4. Second LLM call: formulates final answer grounded on tool results
-5. Display answer with expandable reference documents showing source IDs and relevance
+### `client.py` and `ui.py`
+Streamlit app in Invertek brand colours (periwinkle purple `#535483`, link
+blue `#285FD1`, green accent `#63BF4F`, Mulish, 2px corners). `ui.py` owns
+the palette, CSS and render helpers; `client.py` owns state and the agent
+loop:
+
+1. Technician submits a query; the sidebar's drive connection and uploaded
+   `.ptb` are injected into the system prompt as session context.
+2. Iterative tool loop (up to `MAX_TOOL_ROUNDS`): every round passes
+   `TOOL_DEFINITIONS`, executes whatever the model calls -- status, trips,
+   parameter reads, searches, a proposal -- and feeds results back, until
+   the model answers in plain text.
+3. A validated proposal is attached to the assistant message and rendered
+   as a preview card with **Approve and apply** / **Reject**.
+4. Approval runs platform-side: Modbus write with read-back verification,
+   then the `.ptb` copy, then a platform notice appended to the
+   conversation so the agent knows what actually happened.
+5. The answer displays with citation chips and an expandable reference-
+   documents list.
 
 ---
 
-## Roadmap -- Issues & Analysis panels
+## Roadmap
 
-### Issues panel (next sprint)
-The core troubleshooting experience. Converts a technical fault report into a complete resolution pipeline:
+### Issues panel -- largely delivered
 
-- **Report intake**: fault codes, warnings, current parameters, motor nameplate data, scope recordings, logs, application context
-- **AI Troubleshooting Agent**: interprets the problem, classifies as physical vs. parameter issue, analyzes configuration against motor/application data, produces a diagnosis with root cause and confidence level
-- **Classification logic**:
-  - **Physical/hardware issue**: recommends inspection steps, does NOT attempt to fix via parameters
-  - **Parameter/configuration issue**: identifies exact parameters to change, with current value, proposed value, reason, and expected effect
-- **Human-in-the-loop approval**: the agent never directly modifies the drive. It generates a proposed configuration table with `[APPROVE]` / `[REJECT]` controls
-- **`.ptb` generation**: after approval, exports an OptiTools Studio-compatible parameter file containing only the approved changes, preserving original configuration for unmodified parameters
-- **Post-solution feedback**: collects resolution status, new faults, actual parameters used, technician observations -- feeding the Analysis panel
+What the original plan called the Issues panel now runs in this build:
+
+- **Report intake** -- live fault code, drive state and trip history read
+  from the drive; current parameter values read on demand; the technician
+  describes the symptom in the chat.
+- **AI Troubleshooting Agent** -- interprets the problem and separates
+  physical from parameter causes, citing the document, section and page
+  behind each claim.
+- **Classification** -- physical faults get numbered inspection steps and no
+  parameter changes; configuration faults get an exact change set with
+  current value, proposed value and reason.
+- **Human-in-the-loop approval** -- the agent cannot write. It proposes; the
+  platform renders **Approve and apply** / **Reject** and only acts on the
+  technician's click.
+- **Application and verification** -- each approved parameter is written
+  over Modbus and read back to confirm the drive took it, behind a safety
+  gate that refuses while the drive is running.
+- **`.ptb` generation** -- a modified copy of the uploaded configuration,
+  containing only the approved changes, offered as a download.
+
+Still outstanding: post-solution feedback capture (resolution status, new
+faults, technician observations) to feed the Analysis panel, and
+verification of the `.ptb` registry's addressing and scale factors against
+a file saved from a real drive.
 
 ### Analysis panel (future)
 Aggregates historical issue data for operational intelligence:

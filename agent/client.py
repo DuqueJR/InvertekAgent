@@ -480,10 +480,11 @@ if st.button("Submit Query", key="send_button"):
                 "sources": tool_sources,
             }
             if pending_proposal is not None:
-                # Only one proposal can be pending at a time.
+                # Only the newest proposal is actionable: retire anything
+                # still awaiting approval or awaiting a retry.
                 for m in st.session_state.messages:
                     p = m.get("proposal")
-                    if p and p["status"] == "pending":
+                    if p and p["status"] in ("pending", "failed"):
                         p["status"] = "superseded"
                 st.session_state.proposal_seq = (
                     st.session_state.get("proposal_seq", 0) + 1
@@ -574,10 +575,31 @@ def render_ptb_report(
 PROPOSAL_STATUS_LABELS = {
     "pending": "Awaiting your approval",
     "applied": "Applied and verified",
+    "partial": "Partly applied - see details",
     "rejected": "Rejected - nothing was changed",
-    "failed": "Apply failed - see details",
+    "failed": "Not applied - see details",
     "superseded": "Superseded by a newer proposal",
 }
+
+
+def _drive_report_labels(report: dict) -> tuple:
+    """Truthful headline for a drive write report.
+
+    A batch can land some parameters and reject others; saying "not
+    updated" would misrepresent the state of the drive in front of the
+    technician.
+    """
+    if report.get("applied"):
+        if report.get("rejected"):
+            return (
+                "Drive partly updated - see details",
+                "Drive partly updated - see details",
+            )
+        return (
+            "Drive updated - every write verified by read-back",
+            "Drive updated - every write verified by read-back",
+        )
+    return "Drive not updated", "Drive not updated"
 
 
 def _approve_proposal(message) -> None:
@@ -596,6 +618,11 @@ def _approve_proposal(message) -> None:
         for c in proposal["changes"]
     ]
     notice = []
+    # A retry must not show the previous attempt's reports alongside the new
+    # ones.
+    message.pop("apply_report", None)
+    message.pop("ptb_report", None)
+    message.pop("ptb_bytes", None)
     # The drive is the authority on whether a change took effect; the .ptb
     # copy is a convenience artefact, so a file shortfall is reported as a
     # warning and never downgrades a verified drive write to "failed".
@@ -607,7 +634,7 @@ def _approve_proposal(message) -> None:
             report = apply_change_set(drive, changes)
             message["apply_report"] = report
             drive_outcome = bool(report["success"])
-            if drive_outcome:
+            if report["applied"]:
                 applied = ", ".join(
                     f"{c['code']} {c['old_display']} -> {c['new_display']}"
                     f" {c['units'] or ''}".rstrip()
@@ -617,12 +644,15 @@ def _approve_proposal(message) -> None:
                     f"Written to the drive and verified by read-back: "
                     f"{applied}."
                 )
-            else:
+            if report["rejected"]:
                 reasons = "; ".join(
                     f"{r.get('code') or '?'}: {r['message']}"
                     for r in report["rejected"]
                 )
-                notice.append(f"Drive write failed: {reasons}")
+                notice.append(
+                    f"{'Also not applied' if report['applied'] else 'Not applied'}"
+                    f": {reasons}"
+                )
         else:
             notice.append(
                 "No drive connected, so nothing was written over Modbus."
@@ -689,7 +719,13 @@ def _approve_proposal(message) -> None:
         failed = True
         notice.append(f"Apply aborted by an unexpected error: {exc}")
 
-    proposal["status"] = "failed" if failed else "applied"
+    if not failed:
+        proposal["status"] = "applied"
+    elif (message.get("apply_report") or {}).get("applied"):
+        # Some parameters are on the drive: say so rather than implying none.
+        proposal["status"] = "partial"
+    else:
+        proposal["status"] = "failed"
     st.session_state.messages.append({
         "role": "event",
         "content": (
@@ -729,13 +765,23 @@ def render_proposal_card(message, key: str) -> None:
     parts.append("</div>")
     st.markdown("".join(parts), unsafe_allow_html=True)
 
-    if status == "pending":
+    # "failed" means nothing was written, usually because the safety gate
+    # refused while the drive was running - so the technician must be able
+    # to stop the drive and approve again, exactly as the message says.
+    if status in ("pending", "failed"):
         pid = proposal["id"]
+        # A retry starts from the proposal, not from a partial apply, so the
+        # attempt number keeps the widget keys distinct across rounds.
+        attempt = proposal.get("attempts", 0)
+        approve_label = (
+            "Approve and apply" if status == "pending" else "Retry apply"
+        )
         col_approve, col_reject, _ = st.columns([1, 1, 3])
-        if col_approve.button("Approve and apply", key=f"approve_{pid}"):
+        if col_approve.button(approve_label, key=f"approve_{pid}_{attempt}"):
+            proposal["attempts"] = attempt + 1
             _approve_proposal(message)
             st.rerun()
-        if col_reject.button("Reject", key=f"reject_{pid}"):
+        if col_reject.button("Reject", key=f"reject_{pid}_{attempt}"):
             proposal["status"] = "rejected"
             st.session_state.messages.append({
                 "role": "event",
@@ -748,11 +794,12 @@ def render_proposal_card(message, key: str) -> None:
 
     apply_report = message.get("apply_report")
     if apply_report is not None:
+        ok_label, fail_label = _drive_report_labels(apply_report)
         render_ptb_report(
             apply_report,
             key=f"drive_{key}",
-            ok_label="Drive updated - every write verified by read-back",
-            fail_label="Drive not updated",
+            ok_label=ok_label,
+            fail_label=fail_label,
         )
 
 

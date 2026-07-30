@@ -323,6 +323,10 @@ def inject_css() -> None:
         background: {PALETTE['surface_tile']};
         color: {PALETTE['ink_muted']};
     }}
+    .proposal-status.partial {{
+        background: rgba(133, 183, 69, 0.12);
+        color: {PALETTE['green_alt']};
+    }}
     .proposal-status.failed {{
         background: rgba(180, 35, 24, 0.08);
         color: {PALETTE['error']};
