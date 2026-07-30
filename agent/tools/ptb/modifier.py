@@ -232,6 +232,36 @@ def _dump(report: dict) -> str:
 # Public tool
 # ---------------------------------------------------------------------------
 
+def read_ptb_parameters(ptb_input_path: str, codes=None) -> dict:
+    """Read current parameter values out of a .ptb file.
+
+    Returns {code: display_value} for the requested codes (all registry
+    codes present in the file when `codes` is None). Codes absent from the
+    file or the registry are simply omitted — callers report them as
+    unknown rather than guessing.
+    """
+    registry = load_registry("E3")
+    xml_bytes, _ = _read_ptb(Path(ptb_input_path))
+    root = _parse(xml_bytes, Path(ptb_input_path))
+    ns = _ns_of(root)
+    index = _index_parameters(root, ns)
+
+    wanted = list(codes) if codes else list(registry.parameters)
+    values = {}
+    for code in wanted:
+        spec = registry.get(code)
+        if spec is None:
+            continue
+        entry = index.get((spec.group_num, spec.param_num))
+        if entry is None or not entry["value_elements"]:
+            continue
+        raw = _int_or_none(entry["value_elements"][0].text)
+        if raw is None:
+            continue
+        values[spec.code] = spec.to_display(raw)
+    return values
+
+
 def modify_ptb_configuration(
     ptb_input_path: str,
     changes: list,

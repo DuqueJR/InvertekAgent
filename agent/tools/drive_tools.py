@@ -59,6 +59,68 @@ def read_trip_history(drive=None) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+def read_parameters(codes=None, drive=None, ptb_path=None) -> str:
+    """Read current values of specific parameters, as JSON.
+
+    Prefers the connected drive (live truth) and falls back to the uploaded
+    .ptb file. Never guesses: a code that cannot be read is reported as
+    unavailable with the reason.
+    """
+    registry = _registry()
+    if not isinstance(codes, list) or not codes:
+        return json.dumps({
+            "error": "Provide a list of parameter codes, e.g. ['P-03','P-08'].",
+        })
+
+    live = drive is not None and drive.is_connected
+    from_file = {}
+    if not live and ptb_path:
+        try:
+            from .ptb import read_ptb_parameters
+            from_file = read_ptb_parameters(ptb_path, codes)
+        except Exception:
+            from_file = {}
+
+    values, unavailable = [], []
+    for raw_code in codes:
+        code = str(raw_code).strip()
+        spec = registry.get(code)
+        if spec is None:
+            unavailable.append({
+                "code": code,
+                "reason": f"{code} is not in the E3 parameter registry.",
+            })
+            continue
+        entry = {"code": spec.code, "name": spec.name, "units": spec.units}
+        if live:
+            try:
+                entry["value"] = spec.to_display(drive.read_parameter(code))
+                entry["source"] = "drive (live, over Modbus)"
+                values.append(entry)
+                continue
+            except Exception as exc:
+                unavailable.append({"code": spec.code, "reason": str(exc)})
+                continue
+        if code in from_file:
+            entry["value"] = from_file[code]
+            entry["source"] = "uploaded .ptb file"
+            values.append(entry)
+        else:
+            unavailable.append({
+                "code": spec.code,
+                "reason": (
+                    "No drive is connected and this parameter is not present "
+                    "in the uploaded .ptb file. Ask the technician to read it "
+                    "from the drive keypad."
+                ),
+            })
+
+    return json.dumps({
+        "parameters": values,
+        "unavailable": unavailable,
+    }, ensure_ascii=False)
+
+
 def propose_parameter_changes(changes=None, rationale="", drive=None) -> str:
     """Validate a parameter change set. Never writes anything.
 
@@ -193,6 +255,35 @@ READ_TRIP_HISTORY_TOOL_DEF = {
             "diagnosis in what the drive actually recorded."
         ),
         "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+READ_PARAMETERS_TOOL_DEF = {
+    "type": "function",
+    "function": {
+        "name": "read_parameters",
+        "description": (
+            "Read the CURRENT values of specific Optidrive E3 parameters. "
+            "Reads live from the connected drive when there is one, "
+            "otherwise from the uploaded .ptb file. Use this before "
+            "proposing changes so your diagnosis rests on the drive's "
+            "actual settings — never ask the technician to type values you "
+            "could read yourself."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "codes": {
+                    "type": "array",
+                    "description": (
+                        "Printed parameter codes to read, e.g. "
+                        "['P-03','P-08','P-11']."
+                    ),
+                    "items": {"type": "string"},
+                },
+            },
+            "required": ["codes"],
+        },
     },
 }
 
